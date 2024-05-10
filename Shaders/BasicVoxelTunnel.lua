@@ -2,7 +2,7 @@
 --[=[
 	BasicVoxelTunnel
 	Shader by @Miojo on https://www.shadertoy.com/view/mt2cWm
-	ported to Luau, ran by my engine: RbxGL
+	ported to Luau, ran by my engine: RbxShader
 ]=]
 
 --!native
