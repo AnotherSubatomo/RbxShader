@@ -3,6 +3,12 @@
 	GraphicsMathLab
 	Reimplementation of commonly used
 	GLSL functions in Luau.
+	
+	NOTE:
+	- Reimplementation is incomplete
+	- Do not implement function swizzling
+	  just like what GLSL did, as Luau
+	  is not powerful enough to do that
 ]=]
 
 --!native
