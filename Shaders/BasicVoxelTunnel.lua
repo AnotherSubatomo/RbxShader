@@ -7,7 +7,7 @@
 
 --!native
 
-local g = require(game.ReplicatedStorage.RbxGL.GraphicsMathLib)
+local g = require(game.ReplicatedStorage.RbxShader.GraphicsMathLib)
 
 -- Defining rotation matrix function
 local function path1 ( z : number )
