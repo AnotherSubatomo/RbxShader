@@ -22,9 +22,9 @@ local Run = game:GetService('RunService')
 local Camera = workspace.CurrentCamera
 local Actor = script:GetActor()
 
-local RbxGL = game.ReplicatedStorage:FindFirstChild('RbxGL', true)
-local CanvasDraw = require(RbxGL.CanvasDraw)
-local ImageDataConstructor = require(RbxGL.CanvasDraw:WaitForChild("ImageDataConstructor"))
+local RbxShader = game.ReplicatedStorage:FindFirstChild('RbxShader', true)
+local CanvasDraw = require(RbxShader.CanvasDraw)
+local ImageDataConstructor = require(RbxShader.CanvasDraw:WaitForChild("ImageDataConstructor"))
 
 local RenderConnection : RBXScriptConnection = nil
 local Canvas : CanvasDraw = nil
