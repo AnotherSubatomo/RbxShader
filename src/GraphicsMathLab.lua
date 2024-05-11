@@ -88,6 +88,10 @@ function MathLib.v3_rgb ( v : Vector3 )
 	return v.X, v.Y, v.Z
 end
 
+function MathLib.c3_rgb ( c : Color3 )
+	return c.R, c.G, c.B
+end
+
 function MathLib.yzx ( v : Vector3 )
 	return Vector3.new(v.Y, v.Z, v.X)
 end
@@ -144,6 +148,21 @@ end
 
 function MathLib.reflect ( i : Vector3 , n : Vector3 )
 	return i - 2 * n:Dot(i) * n
+end
+
+function MathLib.exp_v3 ( v : Vector3 )
+	return Vector3.new(
+		math.exp(v.X) ,
+		math.exp(v.Y) ,
+		math.exp(v.Z)
+	)
+end
+
+function MathLib.exp_v2 ( v : Vector2 )
+	return Vector2.new(
+		math.exp(v.X) ,
+		math.exp(v.Y)
+	)
 end
 
 for operation : string, func : () -> any in math do
