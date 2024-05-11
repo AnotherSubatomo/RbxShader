@@ -46,9 +46,9 @@ return {
 		-- // Step up to 100 voxels.
 		for i = 1, 100 do
 			-- // Axis distance to nearest cell (with a small bias).
-			local dist = g.fract(-pos * ray:Sign()) + Vector3.one * 1e-4
+			local dist = g.fract_v3(-pos * ray:Sign()) + Vector3.one * 1e-4
 			-- // Alternative version (produces artifacts after a while)
-			-- // vec3 dist = 1-g.fract(pos * sign(ray)),
+			-- // vec3 dist = 1-g.fract_v3(pos * sign(ray)),
 			-- // Raytraced distance to each axis.
 			local leng = dist / ray:Abs()
 			-- // Nearest axis' raytrace distance (as a vec3).
