@@ -44,33 +44,42 @@ Actor:BindToMessage( 'Draw' , function (
 	Canvas = CanvasDraw.new( Subeasel, CanvasSize )
 end)
 
-Actor:BindToMessage( 'Run' , function (
-	iResolution : Vector2 ,
-	CanvasOffset : Vector2 ,
-	Shader : ModuleScript ,
-	InterlaceFactor : number
+local iResolution : Vector2 = nil
+local CanvasOffset : Vector2 = nil
+local Shader : Shader = nil
+local InterlaceFactor : number = nil
+
+Actor:BindToMessage( 'Set' , function (
+	__iResolution : Vector2 ,
+	__CanvasOffset : Vector2 ,
+	__Shader : ModuleScript ,
+	__InterlaceFactor : number
 )
-	assert( Canvas , 'GL@PARALLEL: Cannot run, personal canvas does not exist.' )
-	Shader = require(Shader) :: Shader
+	assert( Canvas , 'SHADER@PARALLEL: Personal canvas does not exist.' )
 	
-	task.desynchronize()
-	
+	iResolution = __iResolution
+	CanvasOffset = __CanvasOffset
+	Shader = require(__Shader)
+	InterlaceFactor = __InterlaceFactor
+end)
+
+Actor:BindToMessageParallel( 'Run' , function ()
 	-- /* using os.clock() is smoother than os.time(), pretty sick */
 	local oTime = os.clock()
 	local function iTime()
 		return os.clock() - oTime
 	end
-	
+
 	-- // Buffer-accumulation implementation
 	local ImageBuffer = ImageDataConstructor.new(
 		Canvas.Resolution.X ,
 		Canvas.Resolution.Y ,
 		table.create(Canvas.Resolution.Y*Canvas.Resolution.X*4, 1)
 	)
-	
+
 	-- // Interlacer implementation
 	local Step = 1
-	
+
 	-- // Rendering
 	local function PerFrame ( iTimeDelta : number )
 
@@ -79,7 +88,7 @@ Actor:BindToMessage( 'Run' , function (
 
 		for y = Step, Canvas.Resolution.Y, InterlaceFactor do
 			for x = 1, Canvas.Resolution.X do
-				ImageBuffer:SetRGB(x, y, Shader.mainImage(
+				ImageBuffer:SetRGBA(x, y, Shader.mainImage(
 					Vector3.new(ImageBuffer:GetRGB(x, y)),
 					Vector2.new(x + CanvasOffset.X, y + CanvasOffset.Y),
 					iTime,
@@ -92,7 +101,7 @@ Actor:BindToMessage( 'Run' , function (
 		Canvas:DrawImage(ImageBuffer)
 		Step += 1
 	end
-	
+
 	task.synchronize()
 
 	RenderConnection = Run.PreRender:ConnectParallel( PerFrame )
