@@ -20,4 +20,4 @@ If you have an eye for possible optimizations, or how the shader could be better
 <br><br>
 ---
 
-<br>Learn how to use the module here: https://devforum.roblox.com/t/...
+<br>Learn how to use the module here: https://devforum.roblox.com/t/rbxshader-tutorial/2965555
