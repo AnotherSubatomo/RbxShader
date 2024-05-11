@@ -114,7 +114,7 @@ return {
 		if i < max_iter then
 			local d = (cubo * dCubo * res):Dot(mask)
 			local p = ro + d * rd
-			local q = g.fract(p/res) - Vector3.one * 0.5
+			local q = g.fract_v3(p/res) - Vector3.one * 0.5
 			
 			-- // border
 			q = q:Abs()
