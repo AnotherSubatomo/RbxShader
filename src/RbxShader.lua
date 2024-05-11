@@ -1,12 +1,11 @@
 
 --[[
-	================== RbxShader Multithreaded ===================
+	================== RbxShader ===================
 	
-	Last updated: 10/05/2024
-	Version: 1.1.0.b (44) - [Studio Only Beta Release]
+	Last updated: 12/05/2024
+	Version: 1.3.0.b (63) - [Studio Only Beta Release]
 	
-	Learn how to use the module here: https://devforum.roblox.com/t/...
-	Detailed API Documentation: https://devforum.roblox.com/t/...
+	Learn how to use the module here: https://devforum.roblox.com/t/rbxshader-tutorial/2965555
 	
 	Copyright (c) 2024, AnotherSubatomo
 	SPDX-License-Identifier: MIT
@@ -17,6 +16,7 @@
 -- // Types
 export type EngineConfiguration = {
 	InterlaceFactor : number ,
+	DualAxisInterlacing : boolean ,
 	ScreenDivision : number
 }
 
@@ -34,7 +34,8 @@ local ERROR = {
 }
 
 local DEFAULT_CONFIGURATIONS = {
-	InterlaceFactor = 4 ,
+	InterlaceFactor = 2 ,
+	DualAxisInterlacing = true ,
 	ScreenDivision = 16
 }
 
@@ -50,7 +51,7 @@ end
 
 local RbxShader = {}
 
--- // Run a shader
+-- /* Create the environment for running the shader. */
 function RbxShader.new(
 	Parent : LocalScript ,
 	CanvasSize : Vector2 ,
@@ -68,7 +69,7 @@ function RbxShader.new(
 	-- /* Calculate the dimensions of each subdivisions */
 	local Subdivisions = Vector2.new(Configuration.ScreenDivision / 4, 4)
 	local SubcanvasSize = CanvasSize / Subdivisions
-	SubcanvasSize = Vector2.new( math.floor(SubcanvasSize.X), math.floor(SubcanvasSize.Y) )
+		  SubcanvasSize = Vector2.new( math.floor(SubcanvasSize.X), math.floor(SubcanvasSize.Y) )
 	local SubeaselScale = SubcanvasSize / CanvasSize
 	
 	assert( SubcanvasSize:Max((Vector2.one*1025)) == Vector2.one*1025 , ERROR[2] )
@@ -77,6 +78,7 @@ function RbxShader.new(
 	local Screen = Instance.new('ScreenGui')
 	Screen.Parent = Client.PlayerGui
 	Screen.IgnoreGuiInset = true
+	Screen.ResetOnSpawn = false
 	Screen.Name = 'Screen@'..Shader.Name
 
 	local Background = Instance.new('Frame')
@@ -100,10 +102,10 @@ function RbxShader.new(
 	AspectRatio.Parent = Easel
 	AspectRatio.AspectRatio = CanvasSize.X / CanvasSize.Y
 	
-	-- // Parallelize canvas calculations
+	-- /* Parallelize canvas calculations */
 	local Workers = {}
 	
-	-- /* Create worker threads */
+	-- # Create worker threads
 	for i = 1, Configuration.ScreenDivision do
 		local Actor = Instance.new('Actor')
 		script.Worker:Clone().Parent = Actor
@@ -112,7 +114,7 @@ function RbxShader.new(
 	
 	script.Worker:Destroy()
 	
-	-- /* Parent all actors under self */
+	-- # Parent all actors under self
 	for _, Actor : Actor in Workers do
 		Actor.Parent = Parent
 	end
@@ -124,8 +126,7 @@ function RbxShader.new(
 				local Actor = Workers[y+4*(x-1)]
 				Actor.Worker.Name = 'Worker@'..y+4*(x-1)
 				
-				local SubeaselOffset = Vector2.new(x-1, y-1)
-				Actor:SendMessage( 'Draw', Easel , SubeaselScale, SubeaselOffset, SubcanvasSize )
+				Actor:SendMessage( 'Draw', Easel , SubeaselScale, SubcanvasSize , Vector2.new(x, y) )
 			end
 		end
 		
@@ -133,14 +134,19 @@ function RbxShader.new(
 		for y = 1, Subdivisions.Y do
 			for x = 1, Subdivisions.X do
 				local Actor = Workers[y+4*(x-1)]
-
-				local SubcanvasOffset = Vector2.new(x-1, y-1) * SubcanvasSize
-				Actor:SendMessage( 'Set' , CanvasSize, SubcanvasOffset, Shader, Configuration.InterlaceFactor )
+				Actor:SendMessage(
+					'Set' , CanvasSize, Shader,
+					Configuration.InterlaceFactor ,
+					Configuration.DualAxisInterlacing
+				)
 			end
 		end
 	end)
 end
 
+
+
+-- /* Halts a shader from running. */
 function RbxShader.stop(
 	Engine : LocalScript
 )
@@ -151,6 +157,9 @@ function RbxShader.stop(
 	end
 end
 
+
+
+-- /* Runs a shader. (Not a resume function) */
 function RbxShader.run(
 	Engine : LocalScript
 )
@@ -163,9 +172,14 @@ function RbxShader.run(
 	end)
 end
 
+
+
+-- /* Retrieve the graphics-specific math library. */
 function RbxShader:GetMathLib()
 	return require(script.GraphicsMathLib)
 end
+
+
 
 assert( Run:IsClient() , ERROR[5] )
 
