@@ -15,12 +15,23 @@
 
 local MathLib = {}
 
-function MathLib.fract ( v : Vector3 )
+function MathLib.fract_v3 ( v : Vector3 )
 	return Vector3.new(
 		v.X - math.floor(v.X) ,
 		v.Y - math.floor(v.Y) ,
 		v.Z - math.floor(v.Z)
 	)
+end
+
+function MathLib.fract_v2 ( v : Vector2 )
+	return Vector2.new(
+		v.X - math.floor(v.X) ,
+		v.Y - math.floor(v.Y)
+	)
+end
+
+function MathLib.fract ( x : number )
+	return x - math.floor(x)
 end
 
 function MathLib.smoothstep ( edge0 : number , edge1 : number , x : number )
@@ -58,6 +69,21 @@ function MathLib.sin_v2 ( v : Vector2 )
 	)
 end
 
+function MathLib.cos_v3 ( v : Vector3 )
+	return Vector3.new(
+		math.cos(v.X) ,
+		math.cos(v.Y) ,
+		math.cos(v.Z)
+	)
+end
+
+function MathLib.cos_v2 ( v : Vector2 )
+	return Vector2.new(
+		math.cos(v.X) ,
+		math.cos(v.Y)
+	)
+end
+
 function MathLib.v3_rgb ( v : Vector3 )
 	return v.X, v.Y, v.Z
 end
@@ -82,11 +108,14 @@ function MathLib.step_v3 ( edge : Vector3 , x : Vector3 )
 	)
 end
 
--- // Basically lerp
-function MathLib.mix ( x : number , y : number , a : number )
-	return x + (y - x) * a
+function MathLib.step_v2 ( edge : Vector2 , x : Vector2 )
+	return Vector2.new(
+		MathLib.step( edge.X , x.X ) ,
+		MathLib.step( edge.Y , x.Y )
+	)
 end
 
+-- // Basically lerp
 function MathLib.mix_v3 ( x : Vector3 , y : Vector3 , a : number )
 	return x:Lerp(y,a)
 end
@@ -94,9 +123,33 @@ end
 function MathLib.mix_v2 ( x : Vector2 , y : Vector2 , a : number )
 	return x:Lerp(y,a)
 end
+function MathLib.mix ( x : number , y : number , a : number )
+	return x + (y - x) * a
+end
+
+function MathLib.mod_v3 ( x : Vector3 , y : Vector3 )
+	return Vector3.new(
+		x.X % y.X ,
+		x.Y % y.Y ,
+		x.Z % y.Z
+	)
+end
+
+function MathLib.mod_v2 ( x : Vector2 , y : Vector2 )
+	return Vector2.new(
+		x.X % y.X ,
+		x.Y % y.Y
+	)
+end
+
+function MathLib.reflect ( i : Vector3 , n : Vector3 )
+	return i - 2 * n:Dot(i) * n
+end
 
 for operation : string, func : () -> any in math do
 	MathLib[operation] = func
 end
+
+MathLib.Vector4 = script.Vector4
 
 return MathLib
