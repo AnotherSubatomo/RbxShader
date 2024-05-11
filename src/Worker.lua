@@ -3,18 +3,22 @@
 	Worker
 	Multithreaded script responsible for rendering
 	a dictated portion of the canvas.
+	
+	NOTE:
+	- I added a new method on CanvasDraw called `:SetRGBA`
+	  to make color and alpha changing easier.
 ]=]
 
 --!native
 
 export type Shader = {
 	mainImage : (
-		ragColor : Vector3 ,
+		fragColor : Vector3 ,
 		fragCoords : Vector2 ,
 		iTime : number ,
 		iTimeDelta : number ,
 		iResolution : Vector2	
-	) -> (number, number, number)
+	) -> (number, number, number, number)
 }
 
 -- // Dependencies
@@ -23,45 +27,58 @@ local Camera = workspace.CurrentCamera
 local Actor = script:GetActor()
 
 local RbxShader = game.ReplicatedStorage:FindFirstChild('RbxShader', true)
+-- ^^^ Replace this with `script.Parent` during debugging for type-checking...
 local CanvasDraw = require(RbxShader.CanvasDraw)
 local ImageDataConstructor = require(RbxShader.CanvasDraw:WaitForChild("ImageDataConstructor"))
 
 local RenderConnection : RBXScriptConnection = nil
+local CanvasCoords : Vector2 = nil
 local Canvas : CanvasDraw = nil
+
+
 
 Actor:BindToMessage( 'Draw' , function (
 	Easel : Frame ,
 	EaselSize : Vector2 ,
-	EaselOffset : Vector2 ,
-	CanvasSize : Vector2
+	CanvasSize : Vector2 ,
+	__CanvasCoords : Vector2
 )
+	CanvasCoords = __CanvasCoords
+	
 	local Subeasel = Instance.new('Frame')
 	Subeasel.Parent = Easel
 	Subeasel.Size = UDim2.fromScale( EaselSize.X , EaselSize.Y )
-	Subeasel.Position = UDim2.fromScale( EaselSize.X * EaselOffset.X , EaselSize.Y * EaselOffset.Y )
+	Subeasel.Position = UDim2.fromScale( EaselSize.X * (CanvasCoords.X-1) , EaselSize.Y * (CanvasCoords.Y-1) )
 	Subeasel.BackgroundTransparency = 1
 	
 	Canvas = CanvasDraw.new( Subeasel, CanvasSize )
+	Canvas.AutoRender = false
 end)
 
+
+
 local iResolution : Vector2 = nil
-local CanvasOffset : Vector2 = nil
 local Shader : Shader = nil
 local InterlaceFactor : number = nil
+local DualAxisInterlacing : boolean = nil
+
+
 
 Actor:BindToMessage( 'Set' , function (
 	__iResolution : Vector2 ,
-	__CanvasOffset : Vector2 ,
 	__Shader : ModuleScript ,
-	__InterlaceFactor : number
+	__InterlaceFactor : number ,
+	__DualAxisInterlacing : boolean
 )
 	assert( Canvas , 'SHADER@PARALLEL: Personal canvas does not exist.' )
 	
 	iResolution = __iResolution
-	CanvasOffset = __CanvasOffset
 	Shader = require(__Shader)
 	InterlaceFactor = __InterlaceFactor
+	DualAxisInterlacing = __DualAxisInterlacing
 end)
+
+
 
 Actor:BindToMessageParallel( 'Run' , function ()
 	-- /* using os.clock() is smoother than os.time(), pretty sick */
@@ -70,42 +87,79 @@ Actor:BindToMessageParallel( 'Run' , function ()
 		return os.clock() - oTime
 	end
 
-	-- // Buffer-accumulation implementation
-	local ImageBuffer = ImageDataConstructor.new(
-		Canvas.Resolution.X ,
-		Canvas.Resolution.Y ,
-		table.create(Canvas.Resolution.Y*Canvas.Resolution.X*4, 1)
-	)
+	-- /* Buffer-accumulation implementation */
+	--	  Canvases are actually already their own
+	--	  buffer, pretty neat huh! Thanks Ethan! <3
 
-	-- // Interlacer implementation
+	-- /* Interlacer implementation */
 	local Step = 1
+	local StepX, StepY = 1, 1
+	
+	local Offset = Canvas.Resolution * (CanvasCoords - Vector2.one)
 
-	-- // Rendering
-	local function PerFrame ( iTimeDelta : number )
-
+	-- /* Render functions */
+	-- @ with dual-axis interlacing
+	local function DUIRendering ( iTimeDelta : number )
+		
+		if StepX > InterlaceFactor then StepX = 1; StepY += 1 end
+		if StepY > InterlaceFactor then StepY = 1 end
 		local iTime = iTime()
-		if Step > InterlaceFactor then Step = 1 end
 
-		for y = Step, Canvas.Resolution.Y, InterlaceFactor do
+		for y = StepY , Canvas.Resolution.Y, InterlaceFactor do
+			for x = StepX, Canvas.Resolution.X, InterlaceFactor do
+				Canvas:SetRGBA(x, y,
+					Shader.mainImage(
+						Vector3.new(Canvas:GetRGB(x, y)),
+						Vector2.new(x + Offset.X, y + Offset.Y),
+						iTime,
+						iTimeDelta,
+						iResolution
+					)
+				)
+			end
+		end
+		
+		task.synchronize()
+		
+		Canvas:Render()
+		StepX += 1
+	end
+	
+	-- @ without dual-axis interlacing
+	local function UUIRendering ( iTimeDelta : number )
+
+		if Step > InterlaceFactor then Step = 1 end
+		local iTime = iTime()
+
+		for y = Step , Canvas.Resolution.Y, InterlaceFactor do
 			for x = 1, Canvas.Resolution.X do
-				ImageBuffer:SetRGBA(x, y, Shader.mainImage(
-					Vector3.new(ImageBuffer:GetRGB(x, y)),
-					Vector2.new(x + CanvasOffset.X, y + CanvasOffset.Y),
-					iTime,
-					iTimeDelta,
-					iResolution
-				))
+				Canvas:SetRGBA(x, y,
+					Shader.mainImage(
+						Vector3.new(Canvas:GetRGB(x, y)),
+						Vector2.new(x + Offset.X, y + Offset.Y),
+						iTime,
+						iTimeDelta,
+						iResolution
+					)
+				)
 			end
 		end
 
-		Canvas:DrawImage(ImageBuffer)
+		task.synchronize()
+
+		Canvas:Render()
 		Step += 1
 	end
+	
+	-- /* Rendering */
+	local PerFrame = DualAxisInterlacing and DUIRendering or UUIRendering
 
 	task.synchronize()
 
 	RenderConnection = Run.PreRender:ConnectParallel( PerFrame )
 end)
+
+
 
 Actor:BindToMessage( 'Stop' , function ()
 	RenderConnection:Disconnect()
