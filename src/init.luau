@@ -12,7 +12,7 @@
 ]]
 
 --!native
---!strict
+--!nonstrict
 
 -- // Types
 local Types = require(script.Common)
@@ -46,7 +46,7 @@ local DEFAULT_CONFIGURATIONS = {
 	InterlaceFactor = 2 ,
 	DualAxisInterlacing = true ,
 	ScreenDivision = 16
-}
+} :: EngineConfiguration
 
 local MoveConnections = {}
 local ShaderIDs = {}
@@ -57,13 +57,11 @@ function RbxShader.new(
 	Host : Script ,
 	Screen : GuiBase2d ,
 	CanvasSize : Vector2 ,
-	Configuration : EngineConfiguration? ,
+	Configuration : EngineConfiguration ,
 	Shader : ModuleScript ,
 	ShaderID : string
 )
 	-- /* Set default values */
-	Configuration = Configuration or {}
-	
 	local BuiltConfiguration = require(Shader).CONFIGURATION
 	
 	for Field : string , Default : any in DEFAULT_CONFIGURATIONS do
@@ -311,9 +309,9 @@ end
 
 -- /* Retrieve the input handling library. */
 -- * ADDME: The input library....
-function RbxShader:GetInputLib()
+--[[function RbxShader:GetInputLib()
 	return require(script.InputLib)
-end
+end]]
 
 assert( Run:IsClient() , ERROR[5] )
 
