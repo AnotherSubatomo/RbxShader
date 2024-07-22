@@ -2,8 +2,8 @@
 --[[
 	================== RbxShader ===================
 	
-	Last updated: 18/05/2024
-	Version: 1.4.1.b (106) - [Studio Only Beta Release]
+	Last updated: 19/07/2024
+	Version: 1.5.2.b (106) - [Studio Only Beta Release]
 	
 	Learn how to use the module here: https://devforum.roblox.com/t/rbxshader-tutorial/2965555
 	
@@ -12,19 +12,20 @@
 ]]
 
 --!native
+--!strict
 
 -- // Types
-export type EngineConfiguration = {
-	InterlaceFactor : number ,
-	DualAxisInterlacing : boolean ,
-	ScreenDivision : number
-}
+local Types = require(script.Common)
+export type EngineConfiguration = Types.EngineConfiguration
+export type ShaderBuffer = Types.ShaderBuffer
+export type Shader = Types.Shader
 
 -- // Dependencies
 local STRegistry = game:GetService('SharedTableRegistry')
 local Run = game:GetService('RunService')
-local Client = game.Players.LocalPlayer
+local Culler = require(script.Culler)
 
+local Client = game.Players.LocalPlayer
 local Mouse = Client:GetMouse()
 
 -- // Defaults
@@ -128,8 +129,8 @@ function RbxShader.new(
 	Easel.MouseButton1Down:Connect( function()
 		-- # Only consider input when mouse is at the display of the shader.
 		MoveConnections[ShaderID] = Mouse.Move:Connect( function ()
-			SharedTable.update( iMouse, 'X', function(a) return Mouse.X end )
-			SharedTable.update( iMouse, 'Y', function(a) return Mouse.Y end )
+			SharedTable.update( iMouse, 'X', function() return Mouse.X end )
+			SharedTable.update( iMouse, 'Y', function() return Mouse.Y end )
 		end)
 	end)
 
@@ -145,7 +146,7 @@ function RbxShader.new(
 	local Workers = {}
 	
 	-- # Create worker threads
-	for i = 1, Configuration.ScreenDivision do
+	for _ = 1, Configuration.ScreenDivision do
 		local Actor = Instance.new('Actor')
 		script.Worker:Clone().Parent = Actor
 		table.insert(Workers, Actor)
@@ -171,7 +172,7 @@ function RbxShader.new(
 
 				local Scale : Vector2 = Size / CanvasSize
 
-				Actor:SendMessage( 'Draw', Easel , Scale, Size , Vector2.new(x, y) )
+				Actor:SendMessage( 'MakeCanvas', Easel , Scale, Size , Vector2.new(x, y) )
 			end
 		end
 		
@@ -183,6 +184,26 @@ function RbxShader.new(
 			end
 		end
 	end)
+	
+	-- # If `Screen` is a SurfaceGui or BillboardGui, then check
+	--	 if the part that the Gui is adorned to is still visible
+	--	 on the user viewport or is within the max distance.
+	--	 If not, then stop the shader program, but keep the iTime.
+	
+	local WorldspaceGui = (Screen:IsA('SurfaceGui') or Screen:IsA('BillboardGui')) and Screen
+		or Screen:FindFirstChildOfClass('SurfaceGui') or Screen:FindFirstChildOfClass('BillboardGui')
+	
+	if WorldspaceGui then
+		Culler.add(WorldspaceGui, ShaderID, function ()
+			for _, Actor : Actor in Workers do
+				Actor:SendMessage( 'Resume' , ShaderID )
+			end
+		end, function ()
+			for _, Actor : Actor in Workers do
+				Actor:SendMessage( 'Pause' , ShaderID )
+			end
+		end)
+	end
 end
 
 --==============================
@@ -193,7 +214,9 @@ local function GetWorkers ( Engine : LocalScript )
 	local Workers = {}
 
 	for _, Child : Instance in Engine:GetChildren() do
-		if Child:IsA('Actor') then table.insert(Workers, Child) end
+		if Child:IsA('Actor') then
+			table.insert(Workers, Child)
+		end
 	end
 
 	return Workers
@@ -287,11 +310,10 @@ function RbxShader:GetMathLib()
 end
 
 -- /* Retrieve the input handling library. */
+-- * ADDME: The input library....
 function RbxShader:GetInputLib()
 	return require(script.InputLib)
 end
-
-
 
 assert( Run:IsClient() , ERROR[5] )
 

@@ -2,14 +2,24 @@
 --[=[
 	BasicVoxelTunnel
 	Shader by @Miojo on https://www.shadertoy.com/view/mt2cWm
-	ported to Luau, ran by my engine: RbxShader
+	Ported to Luau — ran by my engine — `RbxShader`.
+	
+	( Original comments are preserved. )
 ]=]
 
 --!native
 
 local g = require(game.ReplicatedStorage.RbxShader.GraphicsMathLib)
 
--- Defining rotation matrix function
+-- // Variables
+local res = .6			-- @ voxel size
+local max_iter = 80		-- @ raycast depth
+local distFade = 6		-- @ distance fade
+local speed = 2			-- @ travel speed
+
+local lightClamp = distFade / 2
+
+-- // The white part of the tunnel
 local function path1 ( z : number )
 	return Vector3.new(
 		g.sin(z * .2) * 3 ,
@@ -18,6 +28,7 @@ local function path1 ( z : number )
 	)
 end
 
+-- // The yellow part of the tunnel
 local function path2 ( z : number )
 	return Vector3.new(
 		g.sin(z * .2) * 1 ,
@@ -26,6 +37,7 @@ local function path2 ( z : number )
 	)
 end
 
+-- // The blue part of the tunnel
 local function path3 ( z : number )
 	return Vector3.new(
 		g.sin(z * .3) * 3 ,
@@ -58,6 +70,10 @@ end
 
 -- // Fragment shader
 return {
+	CONFIGURATION = {
+		InterlaceFactor = 1 ,
+		ScreenDivision = 4
+	};
 	-- // Image buffer
 	mainImage = function (
 		fragColor : Vector3 ,
@@ -69,7 +85,7 @@ return {
 		local uv = (fragCoords - 0.5 * iResolution) / iResolution.Y
 		
 		-- // path
-		local t = 2 * iTime
+		local t = speed * iTime
 		local ro = path1(t)
 		local rd = path1(t + 1)
 		
@@ -84,9 +100,6 @@ return {
 		-- /*
 		-- *    "Digital Differential Analysis" (DDA)
 		-- */
-		
-		local res = .5
-		local max_iter = 80
 		
 		local mask, i
 		
@@ -129,13 +142,13 @@ return {
 			col += Vector3.one * (g.cos(t/2) > uv.X and -1 or 1 - q.Magnitude * 4)
 			]]
 			-- // distance fade
-			col *= 4 / (d * d) - .05
+			col *= distFade / (d * d) - .05
 			
 			-- // lights? shadows? oclusion?
 		end
 		
 		-- // gamma correction
-		col = g.sqrt_v3(col)
+		col = g.sqrt_v3(col/lightClamp)
 		return g.v3_rgb(col)
 	end,
 }

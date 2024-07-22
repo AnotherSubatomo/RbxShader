@@ -2,7 +2,9 @@
 --[=[
 	VoxelShader
 	Shader by @Xor on https://www.shadertoy.com/view/fstSRH
-	ported to Luau, ran by my engine: RbxShader
+	Ported to Luau — ran by my engine — `RbxShader`.
+	
+	( Original comments are preserved. )
 ]=]
 
 --!native
@@ -21,6 +23,10 @@ end
 
 -- // Fragment shader
 return {
+	CONFIGURATION = {
+		InterlaceFactor = 2 ,
+		ScreenDivision = 16
+	};
 	-- // Image buffer
 	mainImage = function (
 		fragColor : Vector3 ,

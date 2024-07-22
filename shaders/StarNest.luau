@@ -2,7 +2,7 @@
 --[=[
 	StarNest
 	Shader by @Kali on https://www.shadertoy.com/view/XlfGRj
-	ported to Luau, ran by my engine: RbxShader
+	Ported to Luau — ran by my engine — `RbxShader`.
 	
 	NOTE:
 	- very resource intensive, our goal is to be able
@@ -13,22 +13,6 @@
 --!native
 
 local g = require(game.ReplicatedStorage.RbxShader.GraphicsMathLib)
-
--- // iMouse input handler
-local iMouse = Vector2.one
-
-local Mouse = game.Players.LocalPlayer:GetMouse()
-local MoveConnection : RBXScriptConnection = nil
-
-Mouse.Button1Down:Connect( function()
-	MoveConnection = Mouse.Move:Connect( function ()
-		iMouse = Vector2.new(Mouse.X, Mouse.Y)
-	end)
-end)
-
-Mouse.Button1Up:Connect( function ()
-	MoveConnection:Disconnect()
-end)
 
 -- // #define
 local iterations = 17
@@ -67,7 +51,8 @@ return {
 		fragCoords : Vector2 ,
 		iTime : number ,
 		iTimeDelta : number ,
-		iResolution : Vector2
+		iResolution : Vector2 ,
+		iMouse : Vector2
 	)
 		-- // get coords and direction
 		local uv = Vector2.new(
@@ -96,6 +81,7 @@ return {
 		-- // volumetric rendering
 		local s, fade = 0.1, 1.0
 		local v = Vector3.zero
+
 		for r = 1, volsteps do
 			local p = from+s*dir*.5
 			p = Vector3.one * tile - g.mod_v3(p, Vector3.one * tile * 2)	-- // tiling fold
@@ -107,7 +93,7 @@ return {
 			end
 			local dm = g.max(0, darkmatter-a*a*0.001)	-- // dark matter
 			a *= a*a									-- // add contrast
-			if r > 6 then fade *= 1 - dm end			-- // ark matter, don't render near
+			if r > 6 then fade *= 1 - dm end			-- // dark matter, don't render near
 			-- // v += Vector3.new(dm,dm*.5,0.)
 			v += Vector3.one * fade
 			v += Vector3.new(s, s^2, s^4)*a*brightness*fade	-- // coloring based on distance

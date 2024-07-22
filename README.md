@@ -23,3 +23,20 @@ If you have an eye for possible optimizations, or how the shader could be better
 Read more about the shader here: https://devforum.roblox.com/t/rbxshader-a-robust-shader-engine-for-everyone/2965460
 <br>
 Learn how to use the module here: https://devforum.roblox.com/t/rbxshader-tutorial/2965555
+
+---
+
+## Getting Started
+To build the place from scratch, use:
+
+```bash
+rojo build -o "RbxShader.rbxlx"
+```
+
+Next, open `RbxShader.rbxlx` in Roblox Studio and start the Rojo server:
+
+```bash
+rojo serve
+```
+
+For more help, check out [the Rojo documentation](https://rojo.space/docs).

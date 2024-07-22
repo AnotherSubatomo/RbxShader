@@ -2,7 +2,9 @@
 --[=[
 	ShaderArt
 	Shader by @kishimisu on https://www.shadertoy.com/view/mtyGWy
-	ported to Luau, ran by my engine: RbxShader
+	Ported to Luau — ran by my engine — `RbxShader`.
+	
+	( Original comments are preserved. )
 ]=]
 
 --!native

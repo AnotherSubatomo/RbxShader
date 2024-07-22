@@ -2,7 +2,9 @@
 --[=[
 	GravitySucks
 	Shader by @mrange on https://www.shadertoy.com/view/4cyXWw
-	ported to Luau, ran by my engine: RbxShader
+	Ported to Luau — ran by my engine — `RbxShader`.
+	
+	( Original comments are preserved. )
 ]=]
 
 --!native
@@ -143,8 +145,7 @@ end
 return {
 	CONFIGURATION = {
 		InterlaceFactor = 2 ,
-    DualAxisInterlacing = false ,
-		ScreenDivision = 16
+		ScreenDivision = 4
 	};
 	-- // Image buffer
 	mainImage = function (

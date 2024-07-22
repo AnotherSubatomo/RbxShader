@@ -5,6 +5,8 @@
 	`vec4` data type in GLSL.
 ]=]
 
+--!native
+
 local cos = math.cos
 local sin = math.sin
 
@@ -126,5 +128,7 @@ setmetatable(Vector4, {
 		end
 	end,
 })
+
+export type Vector4 = typeof(Vector4)
 
 return Vector4

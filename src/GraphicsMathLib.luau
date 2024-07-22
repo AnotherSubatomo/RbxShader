@@ -1,6 +1,6 @@
 
 --[=[
-	GraphicsMathLab
+	GraphicsMathLib
 	Reimplementation of commonly used
 	GLSL functions in Luau.
 	
@@ -84,14 +84,6 @@ function MathLib.cos_v2 ( v : Vector2 )
 	)
 end
 
-function MathLib.v3_rgb ( v : Vector3 )
-	return v.X, v.Y, v.Z
-end
-
-function MathLib.c3_rgb ( c : Color3 )
-	return c.R, c.G, c.B
-end
-
 function MathLib.yzx ( v : Vector3 )
 	return Vector3.new(v.Y, v.Z, v.X)
 end
@@ -165,10 +157,25 @@ function MathLib.exp_v2 ( v : Vector2 )
 	)
 end
 
+--[=[=======================
+	/* NON-GLSL FUNCTIONS */
+--========================]=]
+function MathLib.v3_rgb ( v : Vector3 )
+	return v.X, v.Y, v.Z
+end
+
+function MathLib.c3_rgb ( c : Color3 )
+	return c.R, c.G, c.B
+end
+
+function MathLib.c3 ( a : Color3 | Vector3 )
+	return typeof(a) == 'Color3' and a or Color3.new( a.X, a.Y, a.Z )
+end
+
 for operation : string, func : () -> any in math do
 	MathLib[operation] = func
 end
 
-MathLib.Vector4 = script.Vector4
+MathLib.Vector4 = require(script.Parent.Vector4)
 
 return MathLib

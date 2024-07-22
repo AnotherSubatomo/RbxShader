@@ -11,44 +11,30 @@
 
 --!native
 
-export type ShaderBuffer = (
-	fragColor : Vector3 ,
-	fragCoords : Vector2 ,
-	iTime : number ,
-	iTimeDelta : number ,
-	iResolution : Vector2	
-) -> (number, number, number, number)
-
-export type Shader = {
-	mainImage : ShaderBuffer
-}
-
 -- // Dependencies
 local Run = game:GetService('RunService')
-local Camera = workspace.CurrentCamera
 local Actor = script:GetActor()
 
 local RbxShader = game.ReplicatedStorage:FindFirstChild('RbxShader', true)
 -- ^^^ Replace this with `script.Parent` during debugging for type-checking...
 local CanvasDraw = require(RbxShader.CanvasDraw)
-local ImageDataConstructor = require(RbxShader.CanvasDraw:WaitForChild("ImageDataConstructor"))
+local Types = require(RbxShader.Common)
 
 local STRegistry = game:GetService('SharedTableRegistry')
 
 local ERROR = {
-	'SHADER@EUN: Personal canvas does not exist.' ,
+	'SHADER@RUN: Personal canvas does not exist.' ,
 	'SHADER@RUN: Shader never had a `mainImage` function.' ,
 	'SHADER@RUN: Buffers should not share the same letter.' ,
 	'SHADER@RUN: Buffer amount should not exceed 26. (A-Z)'
 }
 
-local RenderConnection : RBXScriptConnection = nil
+----------------------------------------------------------------------------------
+
 local CanvasCoords : Vector2 = nil
-local Canvas : CanvasDraw = nil
+local Canvas : typeof(CanvasDraw) = nil
 
-
-
-Actor:BindToMessage( 'Draw' , function (
+Actor:BindToMessage( 'MakeCanvas' , function (
 	Easel : Frame ,
 	EaselSize : Vector2 ,
 	CanvasSize : Vector2 ,
@@ -64,28 +50,27 @@ Actor:BindToMessage( 'Draw' , function (
 	
 	Canvas = CanvasDraw.new( Subeasel, CanvasSize )
 	Canvas.AutoRender = false
+	Canvas = Canvas.InternalCanvas
 end)
 
-
+----------------------------------------------------------------------------------
 
 local iResolution : Vector2 = nil
-local Shader : Shader = nil
+local Shader : Types.Shader = nil
 local ShaderID : string = nil
 local InterlaceFactor : number = nil
 local DualAxisInterlacing : boolean = nil
 
-local function SetConfigurations( Configuration : EngineConfiguration )
+local function SetConfigurations( Configuration : Types.EngineConfiguration )
 	InterlaceFactor = Configuration.InterlaceFactor
 	DualAxisInterlacing = Configuration.DualAxisInterlacing
 end
-
-
 
 Actor:BindToMessage( 'Initialize' , function (
 	__iResolution : Vector2 ,
 	__Shader : ModuleScript ,
 	__ShaderID : string ,
-	Configuration : EngineConfiguration
+	Configuration : Types.EngineConfiguration
 )
 	assert( Canvas , ERROR[1] )
 	
@@ -95,17 +80,19 @@ Actor:BindToMessage( 'Initialize' , function (
 	SetConfigurations( Configuration )
 end)
 
-
+----------------------------------------------------------------------------------
 
 Actor:BindToMessage( 'Set' , function (
-	Configuration : EngineConfiguration
+	Configuration : Types.EngineConfiguration
 )
 	SetConfigurations( Configuration )
 end)
 
+----------------------------------------------------------------------------------
 
+local RenderConnection : RBXScriptConnection = nil
 
--- /* using os.clock() is smoother than os.time(), pretty sick */
+-- # using os.clock() is smoother than os.time(), pretty sick
 local oTime = os.clock()
 local pTime = 0
 
@@ -116,22 +103,26 @@ end
 
 -- /* Program runner */
 local function RunProgram()
-	
 	-- /* Buffer implementation */
 	local Buffers = {}
-	for Step : string , func : ShaderBuffer in Shader do
+
+	for Step : string , Buffer : Types.ShaderBuffer in Shader do
 		if Step:sub(1, 6) ~= 'buffer' then continue end
 		local Order = Step:sub(7, 7):upper():byte() - 64
 		assert( Buffers[Order] , ERROR[3] )
-		Buffers[Order] = func
+		Buffers[Order] = Buffer
 	end
 
 	-- # Buffer sequence re-ordering
-	local __ = {}
-	for __ , func in Buffers do
-		table.insert(__, func)
+	-- * because some people may have accidentally skipped
+	--	 some letters (really a nano-optimization)
+	local ReorderedBuffers = {}
+
+	for Index : string , Buffer : Types.ShaderBuffer in Buffers do
+		table.insert(Index, Buffer)
 	end
-	Buffers = __
+
+	Buffers = ReorderedBuffers
 
 	assert( Shader.mainImage , ERROR[2] )
 	table.insert(Buffers, Shader.mainImage)
@@ -153,7 +144,7 @@ local function RunProgram()
 		if StepY > InterlaceFactor then StepY = 1 end
 		local iTime = iTime()
 
-		for __ , Buffer : ShaderBuffer in Buffers do
+		for __ , Buffer : Types.ShaderBuffer in Buffers do
 			for y = StepY , Canvas.Resolution.Y, InterlaceFactor do
 				for x = StepX, Canvas.Resolution.X, InterlaceFactor do
 					Canvas:SetRGBA(x, y,
@@ -182,7 +173,7 @@ local function RunProgram()
 		if Step > InterlaceFactor then Step = 1 end
 		local iTime = iTime()
 
-		for __ , Buffer : ShaderBuffer in Buffers do
+		for __ , Buffer : Types.ShaderBuffer in Buffers do
 			for y = Step , Canvas.Resolution.Y, InterlaceFactor do
 				for x = 1, Canvas.Resolution.X do
 					Canvas:SetRGBA(x, y,
@@ -213,7 +204,7 @@ local function RunProgram()
 	RenderConnection = Run.PreRender:ConnectParallel( PerFrame )
 end
 
-
+----------------------------------------------------------------------------------
 
 Actor:BindToMessageParallel( 'Run' , function ()
 	-- /* Reset runtime. */
@@ -221,7 +212,7 @@ Actor:BindToMessageParallel( 'Run' , function ()
 	RunProgram()
 end)
 
-
+----------------------------------------------------------------------------------
 
 Actor:BindToMessage( 'Pause' , function()
 	pTime = iTime()
@@ -230,14 +221,14 @@ Actor:BindToMessage( 'Pause' , function()
 	end
 end)
 
-
+----------------------------------------------------------------------------------
 
 Actor:BindToMessageParallel( 'Resume' , function()
 	oTime += iTime() - pTime
 	RunProgram()
 end)
 
-
+----------------------------------------------------------------------------------
 
 Actor:BindToMessage( 'Stop' , function ()
 	if RenderConnection ~= nil then
