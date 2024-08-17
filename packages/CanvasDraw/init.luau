@@ -5,8 +5,8 @@
 	
 	Created by: Ethanthegrand (@Ethanthegrand14)
 	
-	Last updated: 18/07/2024
-	Version: 4.3.2.b - [Studio Only Beta Release Period]
+	Last updated: 20/07/2024
+	Version: 4.4.1.b - [Studio Only Beta Release Period]
 	
 	Learn how to use the module here: https://devforum.roblox.com/t/1624633
 	Detailed API Documentation: https://devforum.roblox.com/t/2017699
@@ -36,16 +36,13 @@
 	   - CanvasDraw.CreateBlankImageData(Width, Height) : ImageData
 	      * Creates and returns a new blank ImageData object
 	      
-	   - CanvasDraw.CreateSaveObject(ImageData, InstantCreate) : Instance [YEILDS]?
+	   - CanvasDraw.CreateSaveObject(ImageData) : Instance
 	      * Returns a physical save object (a folder instance) containing compressed ImageData.
 	      * This instance can be stored anywhere in your place and can be loaded into CanvasDraw.
-		  * When 'InstantCreate' is set to false, CanvasDraw will slowly create this SaveObject to 
-		    avoid lag (Doing this is recommended for large images).
-		    This will also yeild the code execution.
 		  * Intended for plugin use.
 		  * NOTE: The provided ImageData has to be 256x256 or under!
 		  
-	   - CanvasDraw.CreateSaveObjectFromPixels(PixelArray, Width, Height, InstantCreate) : Instance [YEILDS]?
+	   - CanvasDraw.CreateSaveObjectFromPixels(PixelArray, Width, Height) : Instance
 	      * Same as 'CanvasDraw.CreateSaveObject', but takes an array of RGBA values with
 	        a width and height parameter.
 	      * Intended for plugin use.
@@ -105,8 +102,8 @@
 	   - Canvas:Clear()
 	      * Replaces every current pixel on the canvas with the canvas colour
 	
-	   - Canvas:FloodFill(Point, Colour) : {...}
-	   - Canvas:FloodFillXY(X, Y, Colour)
+	   - Canvas:FloodFill(Point, Colour, Alpha?) : {...}
+	   - Canvas:FloodFillXY(X, Y, Colour, Alpha?)
 	      * This function will fill an area of pixels on the canvas of the specific colour that your point is on.
 	      * An array will also be returned containing all pixel points that were used to fill with.
 	      * NOTE: This function is not very fast! Do not use for real-time engines
@@ -245,6 +242,8 @@
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local AssetService = game:GetService("AssetService")
+local HttpService = game:GetService("HttpService")
+local GuiService = game:GetService("GuiService")
 
 -- Modules
 local FastCanvas = require(script:WaitForChild("FastCanvas")) -- Credits to BoatBomber
@@ -252,6 +251,7 @@ local StringCompressor = require(script:WaitForChild("StringCompressor")) -- Cre
 local PixelTextCharacters = require(script:WaitForChild("TextCharacters"))
 local VectorFuncs = require(script:WaitForChild("VectorFuncs")) -- Credits to Krystaltinan
 local ImageDataConstructor = require(script:WaitForChild("ImageDataConstructor"))
+local SaveObjectReader = require(script:WaitForChild("SaveObjectReader"))
 
 local CanvasDraw = {}
 
@@ -371,13 +371,8 @@ function CanvasDraw.new(Parent: ParentType, Resolution: Vector2?, CanvasColour: 
 	local CanvasR, CanvasG, CanvasB = Canvas.CanvasColour.R, Canvas.CanvasColour.G, Canvas.CanvasColour.B
 	
 	-- Set the grid with a default colour
-	for Y = 1, Canvas.CurrentResY do
-		for X = 1, Canvas.CurrentResX do		
-			InternalCanvas:SetColor3(X, Y, Canvas.CanvasColour)
-		end
-	end
-	
 	InternalCanvas:SetClearRGBA(CanvasR, CanvasG, CanvasB, 1)
+	InternalCanvas:Clear()
 
 	InternalCanvas:Render()
 	
@@ -520,6 +515,10 @@ function CanvasDraw.new(Parent: ParentType, Resolution: Vector2?, CanvasColour: 
 	function Canvas:GetRGB(X: number, Y: number): Color3
 		return InternalCanvas:GetRGB(X, Y)
 	end
+	
+	function Canvas:GetAlpha(X: number, Y: number): number
+		return InternalCanvas:GetAlpha(X, Y)
+	end
 
 	function Canvas:GetPixels(PointA: Vector2, PointB: Vector2): {}
 		local PixelsArray = {}
@@ -565,7 +564,7 @@ function CanvasDraw.new(Parent: ParentType, Resolution: Vector2?, CanvasColour: 
 
 			if not SurfaceGui and UiFrameMode then
 				-- ScreenGui
-				local GuiInset = game.GuiService:GetGuiInset()
+				local GuiInset = GuiService:GetGuiInset()
 				local MousePoint = MouseLocation - GuiInset - CanvasPosition
 
 				local TransformedPoint = (MousePoint / FastCanvasFrameSize) -- Normalised
@@ -678,7 +677,7 @@ function CanvasDraw.new(Parent: ParentType, Resolution: Vector2?, CanvasColour: 
 		end
 		
 		local MouseLocation = UserInputService:GetMouseLocation()
-		local GuiInset = game.GuiService:GetGuiInset()
+		local GuiInset = GuiService:GetGuiInset()
 
 		MouseLocation -= GuiInset
 
@@ -717,8 +716,7 @@ function CanvasDraw.new(Parent: ParentType, Resolution: Vector2?, CanvasColour: 
 		for X = 1, ResX do
 			for Y = 1, ResY do
 				local Index = GetPixelIndex(X, Y)
-				local R, G, B = InternalCanvas:GetRGB(X, Y)
-				local A = InternalCanvas:GetAlpha(X, Y)
+				local R, G, B, A = InternalCanvas:GetRGBA(X, Y)
 				
 				PixelArray[Index] = R
 				PixelArray[Index + 1] = G
@@ -1338,6 +1336,8 @@ function CanvasDraw.new(Parent: ParentType, Resolution: Vector2?, CanvasColour: 
 	end
 
 	function Canvas:DrawTriangleXY(X1: number, Y1: number, X2: number, Y2: number, X3: number, Y3: number, Colour: Color3, Fill: boolean?)
+		
+		
 		-- Bresenham triangle outlines
 		Canvas:DrawLineXY(X1, Y1, X2, Y2, Colour)
 		Canvas:DrawLineXY(X2, Y2, X3, Y3, Colour)
@@ -2092,37 +2092,23 @@ end
 --============================================================================================================--
 
 function CanvasDraw.GetImageData(SaveObject: Instance)
-	local SaveDataImageColours = SaveObject:GetAttribute("ImageColours")
-	local SaveDataImageAlphas = SaveObject:GetAttribute("ImageAlphas")
-	local SaveDataImageResolution = SaveObject:GetAttribute("ImageResolution")
+	local PixelArray
+	local Width, Height
 
-	-- Decompress the data
-	local DecompressedSaveDataImageColours = StringCompressor.Decompress(SaveDataImageColours)
-	local DecompressedSaveDataImageAlphas = StringCompressor.Decompress(SaveDataImageAlphas)
-
-	-- Get a single pixel colour info form the data
-	local PixelDataColoursString = string.split(DecompressedSaveDataImageColours, "S")
-	local PixelDataAlphasString = string.split(DecompressedSaveDataImageAlphas, "S")
-
-	local PixelArray = {} -- {r, g, b, a, r, g, b, a...}
-	
-	for i, PixelColourString in pairs(PixelDataColoursString) do
-		local RGBValues = string.split(PixelColourString, ",")
-		local R, G, B = table.unpack(RGBValues)
-
-		local PixelAlpha = tonumber(PixelDataAlphasString[i])
-		
-		local Index = i * 4 - 3
-
-		PixelArray[Index] = R / 255
-		PixelArray[Index + 1] = G / 255
-		PixelArray[Index + 2] = B / 255
-		PixelArray[Index + 3] = PixelAlpha / 255
+	-- Backwards compatability
+	if SaveObject:GetAttribute("Colour") then
+		-- Modern SaveObject
+		PixelArray, Width, Height = SaveObjectReader.Read(SaveObject)
+	elseif SaveObject:GetAttribute("ImageColours") then
+		-- Legacy SaveObject
+		PixelArray, Width, Height = SaveObjectReader.ReadLegacy(SaveObject)
+	else
+		error("CanvasDraw Module Error | " .. SaveObject.Name .. " is not a valid SaveObject!")
 	end
 
 	-- Convert the SaveObject into image data
-	
-	return ImageDataConstructor.new(SaveDataImageResolution.X, SaveDataImageResolution.Y, PixelArray)
+
+	return ImageDataConstructor.new(Width, Height, PixelArray)
 end
 
 function CanvasDraw.GetImageDataFromTextureId(TextureId: string, MaxWidth: number?, MaxHeight: number?)
@@ -2188,150 +2174,109 @@ function CanvasDraw.CreateBlankImageData(Width: number, Height: number)
 	return ImageDataConstructor.new(Width, Height, PixelArray)
 end
 
-function CanvasDraw.CreateSaveObject(ImageData: {}, InstantCreate: boolean?): Folder
-	if ImageData.Width > SaveObjectResolutionLimit.X and ImageData.Height > SaveObjectResolutionLimit.Y then
-		warn([[Failed to create an image save object (ImageData too large). 
-		Please try to keep the resolution of the image at or under ']] .. SaveObjectResolutionLimit.X .. " x " .. SaveObjectResolutionLimit.Y .. "'.")
-		return
-	end
+function CanvasDraw.CreateSaveObject(ImageData: {}): Folder
+	local RGBArray = {}
+	local AlphaArray = {}
 
-	local FastWaitCount = 0
+	local Width = ImageData.Width
 
-	local function FastWait(Count) -- Avoid lag spikes
-		if FastWaitCount >= Count then
-			FastWaitCount = 0
-			RunService.Heartbeat:Wait()
-		else
-			FastWaitCount += 1
+	-- Get all colours from image
+	for Y = 1, ImageData.Height do
+		for X = 1, Width do
+			local Index = X + (Y - 1) * Width
+			local RGBIndex = Index * 3 - 2
+
+			local R, G, B, A = ImageData:GetRGBA(X, Y)
+
+			local R = math.floor(R * 255)
+			local G = math.floor(G * 255)
+			local B = math.floor(B * 255)
+			local A = math.floor(A * 255)
+
+			RGBArray[RGBIndex] = R
+			RGBArray[RGBIndex + 1] = G
+			RGBArray[RGBIndex + 2] = B
+			AlphaArray[Index] = A
 		end
 	end
 
-	local function ConvertColoursToListString(Colours)
-		local ColourData = {}
-		local RgbStringFormat = "%d,%d,%d"
+	-- Compress the pixel data
+	local ColoursDataString = StringCompressor.Compress(HttpService:JSONEncode(RGBArray))
+	local AlphasDataString = StringCompressor.Compress(HttpService:JSONEncode(AlphaArray))
 
-		for i, Colour in ipairs(Colours) do
-			local R, G, B = RoundN(Colour.R * 255), RoundN(Colour.G * 255), RoundN(Colour.B * 255)
-			TableInsert(ColourData, RgbStringFormat:format(R, G, B))
-
-			if not InstantCreate then
-				FastWait(4000)
-			end
-		end
-
-		return table.concat(ColourData, "S")
-	end
-
-	local function ConvertAlphasToListString(Alphas)	
-		local AlphasListString = table.concat(Alphas, "S")
-		return AlphasListString
-	end
-
-	local ImageColoursString = ConvertColoursToListString(ImageData.ImageColours)
-	local ImageAlphasString = ConvertAlphasToListString(ImageData.ImageAlphas)
-
-	local CompressedImageColoursString = StringCompressor.Compress(ImageColoursString)
-	local CompressedImageAlphasString = StringCompressor.Compress(ImageAlphasString)
-
+	-- Create the save object
 	local NewSaveObject = Instance.new("Folder")
 	NewSaveObject.Name = "NewSave"
 
-	NewSaveObject:SetAttribute("ImageColours", CompressedImageColoursString)
-	NewSaveObject:SetAttribute("ImageAlphas", CompressedImageAlphasString)
-	NewSaveObject:SetAttribute("ImageResolution", ImageData.ImageResolution)
+	NewSaveObject:SetAttribute("Colour", ColoursDataString)
+	NewSaveObject:SetAttribute("Alpha", AlphasDataString)
+	NewSaveObject:SetAttribute("Resolution", Vector2.new(ImageData.Width, ImageData.Height))
 
 	return NewSaveObject
 end
 
-function CanvasDraw.CreateSaveObjectFromPixels(PixelArray: {}, Width: number, Height: number, InstantCreate: boolean?): Folder
+function CanvasDraw.CreateSaveObjectFromPixels(PixelArray: {}, Width: number, Height: number): Folder
 	if Width > SaveObjectResolutionLimit.X and Height > SaveObjectResolutionLimit.Y then
 		warn([[Failed to create an image save object (ImageData too large). 
 		Please try to keep the resolution of the image at or under ']] .. SaveObjectResolutionLimit.X .. " x " .. SaveObjectResolutionLimit.Y .. "'.")
 		return
 	end
 
-	local FastWaitCount = 0
+	local RGBArray = {}
+	local AlphaArray = {}
 
-	local function FastWait(Count) -- Avoid lag spikes
-		if FastWaitCount >= Count then
-			FastWaitCount = 0
-			RunService.Heartbeat:Wait()
-		else
-			FastWaitCount += 1
+
+	-- Get all colours from image
+	for Y = 1, Height do
+		for X = 1, Width do
+			local Index = X + (Y - 1) * Width
+			local RGBIndex = Index * 3 - 2
+			local RGBAIndex = Index * 4 - 3
+
+			local R = math.floor(PixelArray[RGBAIndex] * 255)
+			local G = math.floor(PixelArray[RGBAIndex + 1] * 255)
+			local B = math.floor(PixelArray[RGBAIndex + 2] * 255)
+			local A = math.floor(PixelArray[RGBAIndex + 3] * 255)
+
+			RGBArray[RGBIndex] = R
+			RGBArray[RGBIndex + 1] = G
+			RGBArray[RGBIndex + 2] = B
+			AlphaArray[Index] = A
 		end
 	end
 
-	local function GetGridIndex(X, Y)
-		return (X + (Y - 1) * Width) * 4 - 3
-	end
+	-- Compress the pixel data
+	local ColoursDataString = StringCompressor.Compress(HttpService:JSONEncode(RGBArray))
+	local AlphasDataString = StringCompressor.Compress(HttpService:JSONEncode(AlphaArray))
 
-	local function ConvertDataToString()
-		local ColourData = {}
-		local AlphaData = {}
-
-		local RgbStringFormat = "%d,%d,%d"
-
-		for Index = 1, #PixelArray, 4 do
-			local R = PixelArray[Index] * 255
-			local G = PixelArray[Index + 1] * 255
-			local B = PixelArray[Index + 2] * 255
-			local A = PixelArray[Index + 3] * 255
-
-			TableInsert(ColourData, RgbStringFormat:format(R, G, B))
-			TableInsert(AlphaData, tostring(A))
-
-			if not InstantCreate then
-				FastWait(1000)
-			end
-		end
-
-		return table.concat(ColourData, "S"), table.concat(AlphaData, "S")
-	end
-
-	-- String compression
-	local ImageColoursString, ImageAlphasString = ConvertDataToString()
-
-	local CompressedImageColoursString = StringCompressor.Compress(ImageColoursString)
-	local CompressedImageAlphasString = StringCompressor.Compress(ImageAlphasString)
-
+	-- Create the save object
 	local NewSaveObject = Instance.new("Folder")
 	NewSaveObject.Name = "NewSave"
 
-	NewSaveObject:SetAttribute("ImageColours", CompressedImageColoursString)
-	NewSaveObject:SetAttribute("ImageAlphas", CompressedImageAlphasString)
-	NewSaveObject:SetAttribute("ImageResolution", Vector2.new(Width, Height))
+	NewSaveObject:SetAttribute("Colour", ColoursDataString)
+	NewSaveObject:SetAttribute("Alpha", AlphasDataString)
+	NewSaveObject:SetAttribute("Resolution", Vector2.new(Width, Height))
 
 	return NewSaveObject
 end
 
 function CanvasDraw.CompressImageData(ImageData: {})
-	local CompressedData = {}
-	
-	local Width, Height = ImageData.Width, ImageData.Height
-	
-	local function GetIndex(X, Y)
-		return (X + (Y - 1) * Width) * 4 - 3
-	end
-	
-	local RgbaStringFormat = "%d,%d,%d,%d"
-	
-	-- Convert RGBA array into a string
 	local PixelArray = ImageData.ImagePixels
-	local StringForm = {}
-	
-	for Index = 1, #PixelArray, 4 do
-		local R = RoundN(PixelArray[Index] * 255)
-		local G = RoundN(PixelArray[Index + 1] * 255)
-		local B = RoundN(PixelArray[Index + 2] * 255)
-		local A = RoundN(PixelArray[Index + 3] * 255)
+	local Width, Height = ImageData.Width, ImageData.Height
 
-		TableInsert(StringForm, RgbaStringFormat:format(R, G, B, A))
+	-- Get all colours from image
+	for i = 1, Width * Height * 4, 4 do
+		PixelArray[i] = math.floor(PixelArray[i] * 255)
+		PixelArray[i + 1] = math.floor(PixelArray[i + 1] * 255)
+		PixelArray[i + 2] = math.floor(PixelArray[i + 2] * 255)
+		PixelArray[i + 3] =  math.floor(PixelArray[i + 3] * 255)
 	end
-	
-	-- Compress the string
-	local CompressedPixelString = StringCompressor.Compress(table.concat(StringForm, "S"))
+
+	-- Compress the pixel data
+	local CompressedPixelString = StringCompressor.Compress(HttpService:JSONEncode(PixelArray))
 	
 	-- Create the data object
+	local CompressedData = {}
 	CompressedData.Pixels = CompressedPixelString
 	CompressedData.Width = Width
 	CompressedData.Height = Height
@@ -2340,32 +2285,18 @@ function CanvasDraw.CompressImageData(ImageData: {})
 end
 
 function CanvasDraw.DecompressImageData(CompressedImageData: {})
-	-- Decompress the data
-	local DecompressedPixelsString = StringCompressor.Decompress(CompressedImageData.Pixels)
-
-	-- Get single pixel info from the data
-	local PixelStringArray = string.split(DecompressedPixelsString, "S")
-	
-	-- Convert string data to an RGBA array
-	local PixelArray = {}
-	
+	local PixelArray = HttpService:JSONDecode(StringCompressor.Decompress(CompressedImageData.Pixels))
 	local Width, Height = CompressedImageData.Width, CompressedImageData.Height
 	
-	for Index = 1, #PixelStringArray do
-		local PixelString = PixelStringArray[Index]
-
-		local RGBAValues = string.split(PixelString, ",")
-		local R, G, B, A = table.unpack(RGBAValues)
-
-		local RGBAIndex = Index * 4 - 3
-
-		PixelArray[RGBAIndex] = R / 255
-		PixelArray[RGBAIndex + 1] = G / 255
-		PixelArray[RGBAIndex + 2] = B / 255
-		PixelArray[RGBAIndex + 3] = A / 255
+	-- Convert to valid RGBA number ranges
+	for i = 1, Width * Height * 4, 4 do
+		PixelArray[i] = PixelArray[i] / 255
+		PixelArray[i + 1] = PixelArray[i + 1] / 255
+		PixelArray[i + 2] = PixelArray[i + 2] / 255
+		PixelArray[i + 3] =  PixelArray[i + 3] / 255
 	end
-
-	return ImageDataConstructor.new(CompressedImageData.Width, CompressedImageData.Height, PixelArray)
+	
+	return ImageDataConstructor.new(Width, Height, PixelArray)
 end
 
 --== DEPRECATED FUNCTIONS/METHODS/EVENTS ==--

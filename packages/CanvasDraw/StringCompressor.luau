@@ -3,6 +3,11 @@
 -- Module by 1waffle1, optimized by boatbomber
 -- https://devforum.roblox.com/t/text-compression/163637
 
+local gsub = string.gsub
+local sub = string.sub
+local insert = table.insert
+local rep = string.rep
+
 local dictionary = {}
 do -- populate dictionary
 	local length = 0
@@ -25,12 +30,12 @@ do -- Populate escape map
 end
 
 local function escape(s)
-	return string.gsub(s, '[%c"\\]', function(c)
+	return gsub(s, '[%c"\\]', function(c)
 		return "\127" .. escapemap[c]
 	end)
 end
 local function unescape(s)
-	return string.gsub(s, "\127(.)", function(c)
+	return gsub(s, "\127(.)", function(c)
 		return escapemap[c]
 	end)
 end
@@ -70,7 +75,7 @@ local function tobase10(value)
 
 	n = 0
 	for i = 1, #value do
-		n = n + 93 ^ (i - 1) * dictionary[string.sub(value, -i, -i)]
+		n = n + 93 ^ (i - 1) * dictionary[sub(value, -i, -i)]
 	end
 
 	b10Cache[value] = n
@@ -87,12 +92,12 @@ local function compress(text)
 		if valueLength > width then
 			width, span, spans[width] = valueLength, 0, span
 		end
-		table.insert(sequence, string.rep(" ", width - valueLength) .. value)
+		insert(sequence, rep(" ", width - valueLength) .. value)
 		span += 1
 	end
 	text = escape(text)
 	for i = 1, #text do
-		local c = string.sub(text, i, i)
+		local c = sub(text, i, i)
 		local new = key .. c
 		if dictionaryCopy[new] then
 			key = new
@@ -114,22 +119,22 @@ local function decompress(text)
 	local groups, start = {}, 1
 	for span in string.gmatch(spans, "%d+") do
 		local width = #groups + 1
-		groups[width] = string.sub(content, start, start + span * width - 1)
+		groups[width] = sub(content, start, start + span * width - 1)
 		start = start + span * width
 	end
 	local previous
 
 	for width, group in ipairs(groups) do
-		for value in string.gmatch(group, string.rep(".", width)) do
+		for value in string.gmatch(group, rep(".", width)) do
 			local entry = dictionaryCopy[tobase10(value)]
 			if previous then
 				if entry then
-					table.insert(dictionaryCopy, previous .. string.sub(entry, 1, 1))
+					insert(dictionaryCopy, previous .. sub(entry, 1, 1))
 				else
-					entry = previous .. string.sub(previous, 1, 1)
-					table.insert(dictionaryCopy, entry)
+					entry = previous .. sub(previous, 1, 1)
+					insert(dictionaryCopy, entry)
 				end
-				table.insert(sequence, entry)
+				insert(sequence, entry)
 			else
 				sequence[1] = entry
 			end

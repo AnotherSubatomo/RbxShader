@@ -1,3 +1,5 @@
+--!native
+
 local Module = {}
 
 local function Lerp(A, B, T)
@@ -74,28 +76,20 @@ function Module.new(ImageDataResX, ImageDataResY, PixelArray)
 	function ImageData:Tint(Colour: Color3, T: number)
 		local Array = self.ImagePixels
 
-		for X = 1, ImageDataResX do
-			for Y = 1, ImageDataResY do
-				local Index = GetIndex(X, Y)
-
-				Array[Index] = Lerp(Array[Index], Colour.R, T)
-				Array[Index + 1] = Lerp(Array[Index + 1], Colour.G, T)
-				Array[Index + 2] = Lerp(Array[Index + 2], Colour.B, T)
-			end
+		for i = 1, ImageDataResX * ImageDataResY * 4, 4 do
+			Array[i] = Lerp(Array[i], Colour.R, T)
+			Array[i + 1] = Lerp(Array[i + 1], Colour.G, T)
+			Array[i + 2] = Lerp(Array[i + 2], Colour.B, T)
 		end
 	end
 
 	function ImageData:TintRGB(R: number, G: number, B: number, T: number)
 		local Array = self.ImagePixels
 
-		for X = 1, ImageDataResX do
-			for Y = 1, ImageDataResY do
-				local Index = GetIndex(X, Y)
-
-				Array[Index] = Lerp(Array[Index], R, T)
-				Array[Index + 1] = Lerp(Array[Index + 1], G, T)
-				Array[Index + 2] = Lerp(Array[Index + 2], B, T)
-			end
+		for i = 1, ImageDataResX * ImageDataResY * 4, 4 do
+			Array[i] = Lerp(Array[i], R, T)
+			Array[i + 1] = Lerp(Array[i + 1], G, T)
+			Array[i + 2] = Lerp(Array[i + 2], B, T)
 		end
 	end
 
