@@ -168,6 +168,14 @@ function MathLib.c3_rgb ( c : Color3 )
 	return c.R, c.G, c.B
 end
 
+function MathLib.v3_rgba ( v : Vector3 , alpha : number? )
+	return v.X, v.Y, v.Z, alpha
+end
+
+function MathLib.c3_rgba ( c : Color3 , alpha : number? )
+	return c.R, c.G, c.B, alpha
+end
+
 function MathLib.c3 ( a : Color3 | Vector3 )
 	return typeof(a) == 'Color3' and a or Color3.new( a.X, a.Y, a.Z )
 end
