@@ -32,13 +32,15 @@ local ERROR = {
 ----------------------------------------------------------------------------------
 
 local CanvasCoords : Vector2 = nil
-local Canvas : typeof(CanvasDraw) = nil
+local Canvas : typeof(CanvasDraw) | Types.FastCanvas = nil
 
 Actor:BindToMessage( 'MakeCanvas' , function (
 	Easel : Frame ,
 	EaselSize : Vector2 ,
 	CanvasSize : Vector2 ,
-	__CanvasCoords : Vector2
+	__CanvasCoords : Vector2 ,
+	CanvasColor : Color3? ,
+	IsBlurred : boolean?
 )
 	CanvasCoords = __CanvasCoords
 	
@@ -48,7 +50,7 @@ Actor:BindToMessage( 'MakeCanvas' , function (
 	Subeasel.Position = UDim2.fromScale( EaselSize.X * (CanvasCoords.X-1) , EaselSize.Y * (CanvasCoords.Y-1) )
 	Subeasel.BackgroundTransparency = 1
 	
-	Canvas = CanvasDraw.new( Subeasel, CanvasSize )
+	Canvas = CanvasDraw.new( Subeasel, CanvasSize, CanvasColor, IsBlurred )
 	Canvas.AutoRender = false
 	Canvas = Canvas.InternalCanvas
 end)

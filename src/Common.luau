@@ -16,7 +16,20 @@ export type Shader = {
 export type EngineConfiguration = {
 	InterlaceFactor : number ,
 	DualAxisInterlacing : boolean ,
-	ScreenDivision : number
+	ScreenDivision : number ,
+	CanvasColor : Color3? ,
+	IsBlurred : boolean
+}
+
+export type FastCanvas = {
+	Image : EditableImage ,
+	SetRGBA : ( x : number, y : number, r : number, g : number, b : number, a :number ) -> nil ,
+	GetRGBA : ( x : number, y : number ) -> ( number, number, number, number ) ,
+	SetGrid : ( pixelArray : {number} ) -> nil ,
+	GetGrid : () -> {number} ,
+	Render : () -> nil ,
+	Clear : () -> nil ,
+	Destroy : () -> nil
 }
 
 return true

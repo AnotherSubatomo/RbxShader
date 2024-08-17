@@ -15,7 +15,8 @@ local RbxShader = require(game.ReplicatedStorage.RbxShader)
 local CONFIGURATIONS = {
 	InterlaceFactor = 2 ,
 	DualAxisInterlacing = true ,
-	ScreenDivision = 16
+	ScreenDivision = 16 ,
+	IsBlurred = false
 }
 
 local CANVAS_SIZE = Vector2.new(180, 120)

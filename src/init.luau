@@ -2,8 +2,8 @@
 --[[
 	================== RbxShader ===================
 	
-	Last updated: 19/07/2024
-	Version: 1.5.2.b (106) - [Studio Only Beta Release]
+	Last updated: 17/08/2024
+	Version: 1.5.3.b (138) - [Studio Only Beta Release]
 	
 	Learn how to use the module here: https://devforum.roblox.com/t/rbxshader-tutorial/2965555
 	
@@ -45,7 +45,8 @@ local ERROR = {
 local DEFAULT_CONFIGURATIONS = {
 	InterlaceFactor = 2 ,
 	DualAxisInterlacing = true ,
-	ScreenDivision = 16
+	ScreenDivision = 16 ,
+	IsBlurred = false
 } :: EngineConfiguration
 
 local MoveConnections = {}
@@ -170,7 +171,8 @@ function RbxShader.new(
 
 				local Scale : Vector2 = Size / CanvasSize
 
-				Actor:SendMessage( 'MakeCanvas', Easel , Scale, Size , Vector2.new(x, y) )
+				Actor:SendMessage( 'MakeCanvas' , Easel , Scale , Size , Vector2.new(x, y) ,
+									Configuration.CanvasColor, Configuration.IsBlurred )
 			end
 		end
 		
