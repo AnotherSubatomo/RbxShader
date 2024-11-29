@@ -1,26 +1,6 @@
 {
   "name": "RbxShader",
   "tree": {
-    "$className": "DataModel",
-
-    "ReplicatedStorage": {
-      "RbxShader": {
-        "$path": "src",
-        "CanvasDraw" : {
-          "$path": "packages/CanvasDraw"
-        }
-      }
-    },
-    
-    "StarterPlayer": {
-      "StarterPlayerScripts": {
-        "HostExample": {
-          "$path": "client/HostExample.client.luau",
-          "Shaders": {
-            "$path": "shaders"
-          }
-        }
-      }
-    }
+    "$path": "src"
   }
 }
