@@ -2,8 +2,8 @@
 --[[
 	================== RbxShader ===================
 	
-	Last updated: 17/08/2024
-	Version: 1.5.3.b (138) - [Studio Only Beta Release]
+	Last updated: 22/11/2024
+	Version: 1.5.4.b (148) - [Studio Only Beta Release]
 	
 	Learn how to use the module here: https://devforum.roblox.com/t/rbxshader-tutorial/2965555
 	
@@ -15,7 +15,7 @@
 --!nonstrict
 
 -- // Types
-local Types = require(script.Common)
+local Types = require(script.utils.Common)
 export type EngineConfiguration = Types.EngineConfiguration
 export type ShaderBuffer = Types.ShaderBuffer
 export type Shader = Types.Shader
@@ -24,22 +24,23 @@ export type Shader = Types.Shader
 local STRegistry = game:GetService('SharedTableRegistry')
 local Run = game:GetService('RunService')
 local Culler = require(script.Culler)
+local argue = require(script.utils.Argue)
 
 local Client = game.Players.LocalPlayer
 local Mouse = Client:GetMouse()
 
 -- // Defaults
 local ERROR = {
-	"SHADER: Configs.ScreenDivision must be divisible by 4 for maximum performance." ,
-	"SHADER: Canvas size too big, it's subdivisions are greater than 1024 x 1024 (EditableImage dimension limit)." ,
-	"SHADER: CanvasSize was unspecified." ,
-	"SHADER: Invalid shader given." ,
-	"SHADER: Shaders can't be ran on the server-side. I mean, just why?" ,
-	"SHADER: A ShaderID is necessary in manipulating specific shaders that run on the same script." ,
-	"SHADER: ShaderID has already been used." ,
-	"SHADER: Given ShaderID to fetch shader is not in use, are you sure it's typed correctly?" ,
-	"SHADER: Canvas size too small, minimum size is 4 x 4." ,
-	"SHADER: Given screen to display the shader in was invalid."
+	"Configs.ScreenDivision must be divisible by 4 for maximum performance." ,
+	"Canvas size too big, it's subdivisions are greater than 1024 x 1024 (EditableImage dimension limit)." ,
+	"CanvasSize was unspecified." ,
+	"Invalid shader given." ,
+	"Shaders can't be ran on the server-side. I mean, just why?" ,
+	"A ShaderID is necessary in manipulating specific shaders that run on the same script." ,
+	"ShaderID has already been used." ,
+	"Given ShaderID to fetch shader is not in use, are you sure it's typed correctly?" ,
+	"Canvas size too small, minimum size is 4 x 4." ,
+	"Given screen to display the shader in was invalid."
 }
 
 local DEFAULT_CONFIGURATIONS = {
@@ -50,7 +51,7 @@ local DEFAULT_CONFIGURATIONS = {
 } :: EngineConfiguration
 
 local MoveConnections = {}
-local ShaderIDs = {}
+local ShaderPrograms = {}
 local RbxShader = {}
 
 -- /* Create the environment for running the shader. */
@@ -70,20 +71,20 @@ function RbxShader.new(
 	end
 	
 	-- /* Screen can only be divided into multiples-of-4 parts */
-	assert( Configuration.ScreenDivision % 4 == 0 , ERROR[1] )
-	assert( CanvasSize , ERROR[3] )
-	assert( typeof(Shader) == 'Instance' and Shader:IsA('ModuleScript') , ERROR[4] )
-	assert( CanvasSize:Min(Vector2.one*4) == Vector2.one*4 , ERROR[9] )
+	argue( Configuration.ScreenDivision % 4 == 0 , ERROR[1] )
+	argue( CanvasSize , ERROR[3] )
+	argue( typeof(Shader) == 'Instance' and Shader:IsA('ModuleScript') , ERROR[4] )
+	argue( CanvasSize:Min(Vector2.one*4) == Vector2.one*4 , ERROR[9] )
 	
 	-- /* Calculate the dimensions of each subdivisions */
 	local Subdivisions = Vector2.new(Configuration.ScreenDivision / 4, 4)
 	local SubcanvasSize = (CanvasSize / Subdivisions):Floor()
 	local ExcessSize = CanvasSize - SubcanvasSize * Subdivisions
 	
-	assert( SubcanvasSize:Max((Vector2.one*1025)) == Vector2.one*1025 , ERROR[2] )
+	argue( SubcanvasSize:Max((Vector2.one*1025)) == Vector2.one*1025 , ERROR[2] )
 	
 	-- /* Create the screen from where we'll drawn on */
-	assert( Screen and Screen:IsA('GuiBase2d') , ERROR[10] )
+	argue( Screen and Screen:IsA('GuiBase2d') , ERROR[10] )
 	Screen.Name = 'SHADERSCREEN@'..Shader.Name
 	
 	local Background = Instance.new('Frame')
@@ -109,13 +110,13 @@ function RbxShader.new(
 	AspectRatio.AspectRatio = CanvasSize.X / CanvasSize.Y
 
 	-- /* Create shader host. */
-	assert( ShaderID, ERROR[6] )
-	assert( not ShaderIDs[ShaderID] , ERROR[7] )
+	argue( ShaderID, ERROR[6] )
+	argue( not ShaderPrograms[ShaderID] , ERROR[7] )
 
 	local Parent = Instance.new('Folder')
 	Parent.Parent = Host
 	Parent.Name = 'SHADER@'..ShaderID
-	ShaderIDs[ShaderID] = Parent
+	ShaderPrograms[ShaderID] = Parent
 	
 	local Link = Instance.new('ObjectValue')
 	Link.Parent = Parent
@@ -128,8 +129,23 @@ function RbxShader.new(
 	Easel.MouseButton1Down:Connect( function()
 		-- # Only consider input when mouse is at the display of the shader.
 		MoveConnections[ShaderID] = Mouse.Move:Connect( function ()
-			SharedTable.update( iMouse, 'X', function() return Mouse.X end )
-			SharedTable.update( iMouse, 'Y', function() return Mouse.Y end )
+			local vs = workspace.CurrentCamera.ViewportSize		--@ viewport pixel size
+			local eas = Easel.AbsoluteSize						--@ easel absolute pixel size
+			local e = vs - eas									--@ excess viewport space
+			local mp = Vector2.new(
+				Mouse.X + Easel.AbsolutePosition.X,
+				Mouse.Y + 48 + e.Y / 2
+			)
+			local rmp = mp - e									--@ relative mouse position (to easel)
+			
+			local Position = (rmp / eas * CanvasSize):Ceil()	--@ mouse position relative to canvas size
+
+			SharedTable.update( iMouse, 'X', function()
+				return Position.X
+			end)
+			SharedTable.update( iMouse, 'Y', function()
+				return Position.Y
+			end)
 		end)
 	end)
 
@@ -138,11 +154,17 @@ function RbxShader.new(
 			MoveConnections[ShaderID]:Disconnect()
 		end
 	end)
+
+	Easel.MouseLeave:Connect( function ()
+		if MoveConnections[ShaderID] ~= nil then
+			MoveConnections[ShaderID]:Disconnect()
+		end
+	end)
 	
 	STRegistry:SetSharedTable(ShaderID..'@Mouse', iMouse)
 	
 	-- /* Parallelize canvas calculations */
-	local Workers = {}
+	local Workers : {Act} = {}
 	
 	-- # Create worker threads
 	for _ = 1, Configuration.ScreenDivision do
@@ -185,10 +207,9 @@ function RbxShader.new(
 		end
 	end)
 	
-	-- # If `Screen` is a SurfaceGui or BillboardGui, then check
-	--	 if the part that the Gui is adorned to is still visible
-	--	 on the user viewport or is within the max distance.
-	--	 If not, then stop the shader program, but keep the iTime.
+	-- /* Put culler into action (if `Screen` is a SurfaceGui or BillboardGui) */
+	-- * Runs the program if the part that the Gui is adorned to is still visible
+	--	 on the user viewport or is within the max distance, pauses it if not.
 	
 	local WorldspaceGui = (Screen:IsA('SurfaceGui') or Screen:IsA('BillboardGui')) and Screen
 		or Screen:FindFirstChildOfClass('SurfaceGui') or Screen:FindFirstChildOfClass('BillboardGui')
@@ -222,14 +243,11 @@ local function GetWorkers ( Engine : LocalScript )
 	return Workers
 end
 
-local function CallAction(
-	Action : string ,
-	ShaderID : string
-)
-	assert( ShaderID, ERROR[6] )
-	assert( ShaderIDs[ShaderID], ERROR[8] )
+local function CallAction( Action : string , ShaderID : string )
+	argue( ShaderID, ERROR[6] )
+	argue( ShaderPrograms[ShaderID], ERROR[8] )
 
-	local Workers = GetWorkers( ShaderIDs[ShaderID] )
+	local Workers = GetWorkers( ShaderPrograms[ShaderID] )
 	
 	task.defer( function ()
 		for _, Actor : Actor in Workers do
@@ -260,10 +278,10 @@ end
 
 -- /* Halts and terminates a shader program. */
 function RbxShader.clear( ShaderID : string )
-	assert( ShaderID, ERROR[6] )
-	assert( ShaderIDs[ShaderID], ERROR[8] )
+	argue( ShaderID, ERROR[6] )
+	argue( ShaderPrograms[ShaderID], ERROR[8] )
 
-	local Host = ShaderIDs[ShaderID]
+	local Host = ShaderPrograms[ShaderID]
 	local Workers = GetWorkers( Host )
 
 	for _, Actor : Actor in Workers do
@@ -280,10 +298,10 @@ function RbxShader.set(
 	ShaderID : string ,
 	Configuration : EngineConfiguration
 )
-	assert( ShaderID, ERROR[6] )
-	assert( ShaderIDs[ShaderID], ERROR[8] )
+	argue( ShaderID, ERROR[6] )
+	argue( ShaderPrograms[ShaderID], ERROR[8] )
 	
-	local Workers = GetWorkers( ShaderIDs[ShaderID] )
+	local Workers = GetWorkers( ShaderPrograms[ShaderID] )
 	
 	for Field : string , Default : any in DEFAULT_CONFIGURATIONS do
 		Configuration[Field] = Configuration[Field] or Default
@@ -315,6 +333,6 @@ end
 	return require(script.InputLib)
 end]]
 
-assert( Run:IsClient() , ERROR[5] )
+argue( Run:IsClient() , ERROR[5] )
 
 return RbxShader

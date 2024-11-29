@@ -39,6 +39,21 @@ function MathLib.smoothstep ( edge0 : number , edge1 : number , x : number )
 	return t * t * (3 - 2 * t);
 end
 
+function MathLib.clamp_v3 ( v : Vector3 , min : number , max : number )
+	return Vector3.new(
+		math.clamp(v.X, min, max),
+		math.clamp(v.Y, min, max),
+		math.clamp(v.Z, min, max)
+	)
+end
+
+function MathLib.clamp_v2 ( v : Vector2 , min : number , max : number )
+	return Vector2.new(
+		math.clamp(v.X, min, max),
+		math.clamp(v.Y, min, max)
+	)
+end
+
 function MathLib.sqrt_v3 ( v : Vector3 )
 	return Vector3.new(
 		math.sqrt(v.X) ,
@@ -90,6 +105,14 @@ end
 
 function MathLib.zxy ( v : Vector3 )
 	return Vector3.new(v.Z, v.X, v.Y)
+end
+
+function MathLib.xz ( v : Vector3 )
+	return Vector2.new(v.X, v.Z)
+end
+
+function MathLib.yx ( v : Vector2 | Vector3 )
+	return Vector2.new(v.Y, v.X)
 end
 
 function MathLib.step ( edge : number , x : number )
@@ -154,6 +177,21 @@ function MathLib.exp_v2 ( v : Vector2 )
 	return Vector2.new(
 		math.exp(v.X) ,
 		math.exp(v.Y)
+	)
+end
+
+function MathLib.pow_v3 ( v : Vector3 , vp : Vector3 )
+	return Vector3.new(
+		math.pow(v.X, vp.X) ,
+		math.pow(v.Y, vp.Y) ,
+		math.pow(v.Z, vp.Z)
+	)
+end
+
+function MathLib.pow_v2 ( v : Vector2 , vp : Vector3 )
+	return Vector2.new(
+		math.pow(v.X, vp.X) ,
+		math.pow(v.Y, vp.Y)
 	)
 end
 

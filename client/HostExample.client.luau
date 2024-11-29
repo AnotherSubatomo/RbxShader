@@ -15,12 +15,12 @@ local RbxShader = require(game.ReplicatedStorage.RbxShader)
 local CONFIGURATIONS = {
 	InterlaceFactor = 2 ,
 	DualAxisInterlacing = true ,
-	ScreenDivision = 16 ,
+	ScreenDivision = 4 ,
 	IsBlurred = false
 }
 
 local CANVAS_SIZE = Vector2.new(180, 120)
-local SHADER = script.Shaders.GravitySucks
+local SHADER = script.Shaders.VoxelShader
 
 local SCREEN = Instance.new('ScreenGui')
 SCREEN.Parent = Client.PlayerGui
@@ -32,8 +32,8 @@ RbxShader.run( SHADER.Name )
 
 task.wait(5)
 
-RbxShader.stop( SHADER.Name )
+RbxShader.pause( SHADER.Name )
 
 task.wait(5)
 
-RbxShader.run( SHADER.Name )
+RbxShader.resume( SHADER.Name )

@@ -1,13 +1,13 @@
 
 --[=[
 	Culler
-	Optimizes Billboard and Surface GUIs by unrendering them
-	whenever they are no within the camera's sight or when the
-	max distance has been reached.
-	
-	NOTE:
-	- This doesn't really do anything special as a standalone,
-	  heavily relies on RbxShader
+	While it doesn't necessarily "cull", it optimizes
+	Billboard and Surface GUIs that have scripts connected
+	to them by providing an interface that allows their
+	scripts to stop whenever they are out of sight.
+
+	Author: AnotherSubatomo (GitHub)
+	SPDX-License-Identifier: MIT
 ]=]
 
 --!native
