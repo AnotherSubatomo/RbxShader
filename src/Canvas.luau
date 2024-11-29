@@ -17,7 +17,7 @@ local writeu8 = buffer.writeu8
 local readu8 = buffer.readu8
 -- * denormalizes a normalized number
 local uint8 = function(n: number) : number
-	return math.ceil(n * 255)
+	return math.clamp(math.ceil(n * 255), 0, 255)
 end
 
 local Canvas = {}
@@ -83,13 +83,12 @@ function Canvas:__GetIndex(X: number, Y: number) : number
 end
 
 function Canvas:SetRGBA(X: number, Y: number, R: number, G: number, B: number, A: number)
-	A = A or 1
 	local Index = self:__GetIndex(X, Y)
 	local ImgBuff = self.__ImageBuffer
 	writeu8(ImgBuff, Index, uint8(R))
 	writeu8(ImgBuff, Index + 1, uint8(G))
 	writeu8(ImgBuff, Index + 2, uint8(B))
-	writeu8(ImgBuff, Index + 3, uint8(A))
+	writeu8(ImgBuff, Index + 3, uint8(A or 1))
 	return nil
 end
 

@@ -164,7 +164,7 @@ function RbxShader.new(
 	STRegistry:SetSharedTable(ShaderID..'@Mouse', iMouse)
 	
 	-- /* Parallelize canvas calculations */
-	local Workers : {Act} = {}
+	local Workers : {Actor} = {}
 	
 	-- # Create worker threads
 	for _ = 1, Configuration.ScreenDivision do

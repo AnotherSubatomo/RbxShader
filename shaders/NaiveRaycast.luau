@@ -4,8 +4,6 @@
 	Pixelizes the game environment by naively raycasting.
 	
 	NOTE:
-	- perspective is broken on screen resolutions other
-	  than 120 by 80
 	- there is something very wrong with how I calculate
 	  material reflectance
 ]=]
@@ -18,7 +16,7 @@ local Camera = workspace.CurrentCamera
 -- // #defines
 local SKY_COLOR = Color3.fromRGB(117, 202, 255)
 local ZOOM = 6
-local CANVAS_SIZE = Vector2.new(120, 80) * ZOOM
+local CANVAS_SIZE = Vector2.new(180, 120) * ZOOM
 
 local Offset = (Camera.ViewportSize - CANVAS_SIZE) / 2
 
