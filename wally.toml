@@ -1,0 +1,14 @@
+[package]
+name = "anothersubatomo/rbxshader"
+version = "1.8.5"
+description = "A robust, simple, and performant fragment shader engine, for everyone."
+license = "MIT"
+authors = ["AnotherSubatomo"]
+
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+
+exclude = ["**"]
+include = ["src", "src/*", "package.project.json", "wally.lock", "wally.toml"]
+
+[dependencies]
