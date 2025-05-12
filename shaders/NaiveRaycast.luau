@@ -29,7 +29,9 @@ end)
 return {
 	CONFIGURATION = {
 		InterlaceFactor = 2 ,
-		ScreenDivision = 4
+		ScreenDivision = 4 ,
+		OriginOffset = Vector2.zero ,
+		CountDirection = Vector2.one
 	};
 	-- // Image buffer
 	mainImage = function (

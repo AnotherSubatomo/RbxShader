@@ -155,7 +155,7 @@ return {
 		iTimeDelta : number ,
 		iResolution : Vector2
 	)
-		local p : Vector2 = (-iResolution+2*fragCoords)/-iResolution.Y
+		local p : Vector2 = (-iResolution+2*fragCoords)/iResolution.Y
 		local col : Vector3 = effect(iResolution, iTime, p);
 
 		return g.v3_rgb(col)

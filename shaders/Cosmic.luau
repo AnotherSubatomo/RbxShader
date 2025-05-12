@@ -41,15 +41,15 @@ return {
 		iResolution : Vector2 ,
 		iMouse : Vector2
 	)
-		-- // Clear fragcolor (hacky);
+		-- // Clear fragcolor (hacky)
 		fragColor *= 0;
 		-- // Initialize resolution for scaling
-		local r : Vector2	= iResolution;
+		local r : Vector2 = iResolution;
 		-- // Save centered pixel coordinates
 		local p = (fragCoords-r*.6);
 		p = vec2(
-			p.X + 2 * p.Y,
-			-1 * p.X + 2 * p.Y
+			(p.X) + (2*p.Y),
+			(-p.X) + (2*p.Y)
 		);
 
 		-- // Initialize loop iterator and arc angle
