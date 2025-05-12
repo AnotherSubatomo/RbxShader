@@ -18,10 +18,10 @@ Yes, the usage of Ethanthegrand14's CanvasDraw has been dropped in favor of a mo
 * The aforementioned configurations are meant to resolve OpenGL shader port compatability issues when it came to pixel mapping, which I discovered and faced while adding the *four new shader examples*.
 
 * Added four new shader examples, namely:
-	`Plasma` by *@Xor*,
-	`ZippyZaps` by *@SnoopethDuckDuck*,
-	`ShootingStars` by *@Xor*,
-	and `Currents` by *@s23b*.
+	`Plasma` by *[@Xor](https://shadertoy.com/user/Xor)*,
+	`ZippyZaps` by *[@SnoopethDuckDuck](https://shadertoy.com/user/SnoopethDuckDuck)*,
+	`ShootingStars` by *[@Xor](https://shadertoy.com/user/Xor)*,
+	and `Currents` by *[@s23b](https://shadertoy.com/user/s23b)*.
 
 * Re-ordered the parameters of the Shader constructor to represent its priorities better.
 
