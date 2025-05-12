@@ -30,7 +30,7 @@ If you have an eye for possible optimizations, or how the shader could be better
 
 Read more about the engine through the [DevForum post](https://devforum.roblox.com/t/rbxshader-a-robust-shader-engine-for-everyone/2965460).
 
-Learn more about the engine via the a [DevForum tutorial post](https://devforum.roblox.com/t/rbxshader-tutorial/2965555) or [documentations]().
+Learn more about the engine via the a [DevForum tutorial post](https://devforum.roblox.com/t/rbxshader-tutorial/2965555) or [documentations](docs/DOCUMENTATION.md).
 
 ---
 
