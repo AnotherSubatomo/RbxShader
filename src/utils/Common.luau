@@ -1,15 +1,23 @@
 
 -- [=[ Common types found across the scripts. ]=]
+--!native
 
 export type ShaderBuffer = (
 	fragColor : Vector3 ,
 	fragCoords : Vector2 ,
 	iTime : number ,
 	iTimeDelta : number ,
-	iResolution : Vector2	
+	iResolution : Vector2 ,
+	iMouse : SharedTable ,
+	iDate : {number}
 ) -> (number, number, number, number)
 
+-- a few buffer name examples
+export type BufferName = 'bufferA' | 'bufferB' | 'bufferC' | 'bufferD' | 'bufferE'
+
 export type Shader = {
+	CONFIGURATION : EngineConfiguration ,
+	[BufferName] : ShaderBuffer ,
 	mainImage : ShaderBuffer
 }
 
@@ -17,18 +25,11 @@ export type EngineConfiguration = {
 	InterlaceFactor : number ,
 	DualAxisInterlacing : boolean ,
 	ScreenDivision : number ,
-	CanvasColor : Color3? ,
-	IsBlurred : boolean
-}
-
-export type FastCanvas = {
-	Resolution : Vector2 ,
-	__Canvas : EditableImage ,
-	__GetIndex : (X: number, Y: number) -> number ,
-	SetRGBA : ( x : number, y : number, r : number, g : number, b : number, a :number ) -> nil ,
-	GetRGB : ( x : number, y : number ) -> ( number, number, number ) ,
-	Render : () -> nil ,
-	Destroy : () -> nil
+	InitialColor : Color3? ,
+	InitialAlpha : number? ,
+	IsBlurred : boolean? ,
+	OriginOffset : Vector2 ,
+	CountDirection : Vector2
 }
 
 return true

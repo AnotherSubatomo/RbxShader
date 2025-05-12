@@ -2,10 +2,10 @@
 --[[
 	================== RbxShader ===================
 	
-	Last updated: 22/11/2024
-	Version: 1.5.4.b (148) - [Studio Only Beta Release]
+	Last updated: 12/05/2025
+	Version: 1.8.5 (191)
 	
-	Learn how to use the module here: https://devforum.roblox.com/t/rbxshader-tutorial/2965555
+	Learn more about the engine via: https://github.com/AnotherSubatomo/RbxShader
 	
 	Copyright (c) 2024, AnotherSubatomo
 	SPDX-License-Identifier: MIT
@@ -29,7 +29,13 @@ local argue = require(script.utils.Argue)
 local Client = game.Players.LocalPlayer
 local Mouse = Client:GetMouse()
 
+local function GuiIsAWorldspaceGui(Screen: BillboardGui | SurfaceGui): boolean
+	return Screen:IsA('SurfaceGui') or Screen:IsA('BillboardGui')
+end
+
 -- // Defaults
+local MOUSE_REF = '@Mouse'
+
 local ERROR = {
 	"Configs.ScreenDivision must be divisible by 4 for maximum performance." ,
 	"Canvas size too big, it's subdivisions are greater than 1024 x 1024 (EditableImage dimension limit)." ,
@@ -47,8 +53,12 @@ local DEFAULT_CONFIGURATIONS = {
 	InterlaceFactor = 2 ,
 	DualAxisInterlacing = true ,
 	ScreenDivision = 16 ,
-	IsBlurred = false
+	IsBlurred = false ,
+	OriginOffset = Vector2.yAxis, --> by OpenGL convention
+	CountDirection = Vector2.new(1, -1) --> by OpenGL convention
 } :: EngineConfiguration
+
+argue( Run:IsClient() , ERROR[5] )
 
 local MoveConnections = {}
 local ShaderPrograms = {}
@@ -56,15 +66,16 @@ local RbxShader = {}
 
 -- /* Create the environment for running the shader. */
 function RbxShader.new(
+	ShaderID : string ,
+	Shader : ModuleScript ,
+	Configuration : EngineConfiguration ,
 	Host : Script ,
 	Screen : GuiBase2d ,
-	CanvasSize : Vector2 ,
-	Configuration : EngineConfiguration ,
-	Shader : ModuleScript ,
-	ShaderID : string
+	CanvasSize : Vector2
 )
 	-- /* Set default values */
 	local BuiltConfiguration = require(Shader).CONFIGURATION
+	Configuration = if type(Configuration) ~= "table" then {} else Configuration
 	
 	for Field : string , Default : any in DEFAULT_CONFIGURATIONS do
 		Configuration[Field] = Configuration[Field] or BuiltConfiguration[Field] or Default
@@ -126,7 +137,7 @@ function RbxShader.new(
 	-- /* Assume inputs are needed */
 	local iMouse = SharedTable.new({ X = 1, Y = 1 })
 	
-	Easel.MouseButton1Down:Connect( function()
+	Easel.MouseButton1Down:Connect( function ()
 		-- # Only consider input when mouse is at the display of the shader.
 		MoveConnections[ShaderID] = Mouse.Move:Connect( function ()
 			local vs = workspace.CurrentCamera.ViewportSize		--@ viewport pixel size
@@ -149,19 +160,16 @@ function RbxShader.new(
 		end)
 	end)
 
-	Easel.MouseButton1Up:Connect( function ()
+	local function DisconnectMoveConnection()
 		if MoveConnections[ShaderID] ~= nil then
 			MoveConnections[ShaderID]:Disconnect()
 		end
-	end)
-
-	Easel.MouseLeave:Connect( function ()
-		if MoveConnections[ShaderID] ~= nil then
-			MoveConnections[ShaderID]:Disconnect()
-		end
-	end)
+	end
 	
-	STRegistry:SetSharedTable(ShaderID..'@Mouse', iMouse)
+	Easel.MouseButton1Up:Connect(DisconnectMoveConnection)
+	Easel.MouseLeave:Connect(DisconnectMoveConnection)
+	
+	STRegistry:SetSharedTable(ShaderID..MOUSE_REF, iMouse)
 	
 	-- /* Parallelize canvas calculations */
 	local Workers : {Actor} = {}
@@ -181,6 +189,15 @@ function RbxShader.new(
 	end
 	
 	task.defer( function ()
+		-- /* Set environment context */
+		for y = 1, Subdivisions.Y do
+			for x = 1, Subdivisions.X do
+				local Actor = Workers[y+4*(x-1)]
+				local CanvasCoords = Vector2.new(x, y)
+				Actor:SendMessage('SetContext', ShaderID, Shader, CanvasSize, CanvasCoords, Configuration)
+			end
+		end
+
 		-- /* Create the subcanvases */
 		for y = 1, Subdivisions.Y do
 			for x = 1, Subdivisions.X do
@@ -189,20 +206,10 @@ function RbxShader.new(
 
 				local Size : Vector2 = SubcanvasSize
 				if y == Subdivisions.Y then Size += Vector2.new(0, ExcessSize.Y) end
-				if y == Subdivisions.X then Size += Vector2.new(ExcessSize.X, 0) end
+				if x == Subdivisions.X then Size += Vector2.new(ExcessSize.X, 0) end
 
 				local Scale : Vector2 = Size / CanvasSize
-
-				Actor:SendMessage( 'MakeCanvas' , Easel , Scale , Size , Vector2.new(x, y) ,
-									Configuration.CanvasColor, Configuration.IsBlurred )
-			end
-		end
-		
-		-- /* Set rendering context */
-		for y = 1, Subdivisions.Y do
-			for x = 1, Subdivisions.X do
-				local Actor = Workers[y+4*(x-1)]
-				Actor:SendMessage( 'Initialize' , CanvasSize, Shader, ShaderID , Configuration )
+				Actor:SendMessage('MakeCanvas', Easel, Scale, Size)
 			end
 		end
 	end)
@@ -211,7 +218,7 @@ function RbxShader.new(
 	-- * Runs the program if the part that the Gui is adorned to is still visible
 	--	 on the user viewport or is within the max distance, pauses it if not.
 	
-	local WorldspaceGui = (Screen:IsA('SurfaceGui') or Screen:IsA('BillboardGui')) and Screen
+	local WorldspaceGui = GuiIsAWorldspaceGui(Screen) and Screen
 		or Screen:FindFirstChildOfClass('SurfaceGui') or Screen:FindFirstChildOfClass('BillboardGui')
 	
 	if WorldspaceGui then
@@ -282,13 +289,19 @@ function RbxShader.clear( ShaderID : string )
 	argue( ShaderPrograms[ShaderID], ERROR[8] )
 
 	local Host = ShaderPrograms[ShaderID]
+	local Screen = Host.ScreenLink.Value
 	local Workers = GetWorkers( Host )
 
 	for _, Actor : Actor in Workers do
 		Actor:SendMessage( 'Stop' )
 	end
 	
-	Host.ScreenLink.Value:Destroy()
+	if GuiIsAWorldspaceGui(Screen) then
+		Culler.remove(ShaderID)
+	end
+	
+	STRegistry:SetSharedTable(ShaderID..MOUSE_REF, nil)
+	Screen:Destroy()
 	Host:ClearAllChildren()
 	Host:Destroy()
 end
@@ -326,13 +339,5 @@ end
 function RbxShader:GetMathLib()
 	return require(script.GraphicsMathLib)
 end
-
--- /* Retrieve the input handling library. */
--- * ADDME: The input library....
---[[function RbxShader:GetInputLib()
-	return require(script.InputLib)
-end]]
-
-argue( Run:IsClient() , ERROR[5] )
 
 return RbxShader

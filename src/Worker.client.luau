@@ -11,108 +11,91 @@
 local Run = game:GetService('RunService')
 local Actor = script:GetActor()
 
---local root = script.Parent // enable during development
 local root = game.ReplicatedStorage:WaitForChild('RbxShader')
 local FastCanvas = require(root.Canvas)
-local argue = require(root.utils.Argue):at('run')
+local argue = require(root.utils.Argue):at('runtime')
 
 local STRegistry = game:GetService('SharedTableRegistry')
 
 local ERROR = {
-	'Personal canvas does not exist.' ,
 	'Shader never had a `mainImage` function.' ,
-	'Buffers should not share the same letter.' ,
-	'Buffer amount should not exceed 26. (A-Z)'
+	'Different shader buffers cannot not share the same letter.'
 }
 
 -- * Every type changes will have to be manually synced, unfortunately
-export type ShaderBuffer = (
-	fragColor : Vector3 ,
-	fragCoords : Vector2 ,
-	iTime : number ,
-	iTimeDelta : number ,
-	iResolution : Vector2	
-) -> (number, number, number, number)
-
-export type Shader = {
-	mainImage : ShaderBuffer
-}
-
-export type EngineConfiguration = {
-	InterlaceFactor : number ,
-	DualAxisInterlacing : boolean ,
-	ScreenDivision : number ,
-	CanvasColor : Color3? ,
-	IsBlurred : boolean
-}
-
-export type FastCanvas = {
-	Resolution : Vector2 ,
-	__Canvas : EditableImage ,
-	__GetIndex : (X: number, Y: number) -> number ,
-	SetRGBA : ( x : number, y : number, r : number, g : number, b : number, a :number ) -> nil ,
-	GetRGB : ( x : number, y : number ) -> ( number, number, number ) ,
-	Render : () -> nil ,
-	Destroy : () -> nil
-}
+local Types = require(root.utils.Common)
+type ShaderBuffer = Types.ShaderBuffer
+type Shader = Types.Shader
+type EngineConfiguration = Types.EngineConfiguration
+type FastCanvas = FastCanvas.Canvas
 
 ----------------------------------------------------------------------------------
 
+local ShaderID : string = nil
+local Shader : Shader = nil
+local iResolution : Vector2 = nil
 local CanvasCoords : Vector2 = nil
+local Configuration : EngineConfiguration = nil
+
+Actor:BindToMessage( 'SetContext' , function (
+	__ShaderID : string ,
+	__Shader : ModuleScript ,
+	__iResolution : Vector2 ,
+	__CanvasCoords : Vector2 ,
+	__Configuration : EngineConfiguration
+)
+	ShaderID = __ShaderID
+	Shader = require(__Shader)
+	iResolution = __iResolution
+	CanvasCoords = __CanvasCoords
+	Configuration = __Configuration
+end)
+
+----------------------------------------------------------------------------------
+
 local Canvas : FastCanvas = nil
 
 Actor:BindToMessage( 'MakeCanvas' , function (
 	Easel : Frame ,
 	EaselSize : Vector2 ,
-	CanvasSize : Vector2 ,
-	__CanvasCoords : Vector2 ,
-	CanvasColor : Color3? ,
-	IsBlurred : boolean?
+	CanvasSize : Vector2
 )
-	CanvasCoords = __CanvasCoords
-	
 	local Subeasel = Instance.new('Frame')
 	Subeasel.Parent = Easel
 	Subeasel.Size = UDim2.fromScale( EaselSize.X , EaselSize.Y )
 	Subeasel.Position = UDim2.fromScale( EaselSize.X * (CanvasCoords.X-1) , EaselSize.Y * (CanvasCoords.Y-1) )
 	Subeasel.BackgroundTransparency = 1
-	
-	Canvas = FastCanvas.new( Subeasel, CanvasSize, CanvasColor, IsBlurred )
-end)
 
-----------------------------------------------------------------------------------
-
-local iResolution : Vector2 = nil
-local Shader : Shader = nil
-local ShaderID : string = nil
-local InterlaceFactor : number = nil
-local DualAxisInterlacing : boolean = nil
-
-local function SetConfigurations( Configuration : EngineConfiguration )
-	InterlaceFactor = Configuration.InterlaceFactor
-	DualAxisInterlacing = Configuration.DualAxisInterlacing
-end
-
-Actor:BindToMessage( 'Initialize' , function (
-	__iResolution : Vector2 ,
-	__Shader : ModuleScript ,
-	__ShaderID : string ,
-	Configuration : EngineConfiguration
-)
-	argue( Canvas , ERROR[1] )
-	
-	iResolution = __iResolution
-	Shader = require(__Shader)
-	ShaderID = __ShaderID
-	SetConfigurations( Configuration )
+	Canvas = FastCanvas.new(Subeasel, CanvasSize, Configuration.IsBlurred)
+	-- Initialize the image buffer to the given initial color and alpha
+	Canvas:Fill(Configuration.InitialColor, Configuration.InitialAlpha)
+	-- Initialize the VPM buffer to the given origin, offset, and counting direction
+	local VirtualOrigin = Configuration.OriginOffset * iResolution
+	local RelativeOffset = Canvas.Resolution * (CanvasCoords - Vector2.one)
+	local CountDirection = Configuration.CountDirection
+	Canvas:RecalculateVirtualPixelMapping(VirtualOrigin, RelativeOffset, CountDirection)
 end)
 
 ----------------------------------------------------------------------------------
 
 Actor:BindToMessage( 'Set' , function (
-	Configuration : EngineConfiguration
+	NewConfiguration : EngineConfiguration
 )
-	SetConfigurations( Configuration )
+	-- # Do necessary updates
+	-- @ Update resample mode
+	if NewConfiguration.IsBlurred ~= Configuration.IsBlurred then
+		local Resampler = Enum.ResamplerMode
+		Canvas.__Easel.ResampleMode = NewConfiguration.IsBlurred and Resampler.Default or Resampler.Pixelated
+	end
+	-- @ Update pixel coordinate mapping
+	if NewConfiguration.OriginOffset ~= Configuration.OriginOffset or
+	NewConfiguration.CountDirection ~= Configuration.CountDirection then
+		local VirtualOrigin = NewConfiguration.OriginOffset * iResolution
+		local RelativeOffset = Canvas.Resolution * (CanvasCoords - Vector2.one)
+		local CountDirection = NewConfiguration.CountDirection
+		Canvas:RecalculateVirtualPixelMapping(VirtualOrigin, RelativeOffset, CountDirection)
+	end
+	Configuration = NewConfiguration
 end)
 
 ----------------------------------------------------------------------------------
@@ -143,40 +126,37 @@ end
 
 -- /* Program runner */
 local function RunProgram()
-	-- /* Buffer implementation */
-	local Buffers = {}
+	-- # Fundamental variables
+	local Buffers = {} --> collection of shader buffers
+	local iMouse = STRegistry:GetSharedTable(ShaderID..'@Mouse') --> mouse position
+	local InterlaceFactor = Configuration.InterlaceFactor
+	local DualAxisInterlacing = Configuration.DualAxisInterlacing
 
+	-- # Buffer implementation
 	for Step : string , Buffer : ShaderBuffer in Shader do
-		if Step:sub(1, 6) ~= 'buffer' then continue end
+		if type(Step) ~= "string" or Step:sub(1, 6) ~= 'buffer' then continue end
 		local Order = Step:sub(7, 7):upper():byte() - 64
-		argue( Buffers[Order] , ERROR[3] )
+		argue( Buffers[Order] , ERROR[2] )
 		Buffers[Order] = Buffer
 	end
 
-	-- # Buffer sequence re-ordering
-	-- * because some people may have accidentally skipped
-	--	 some letters (really a nano-optimization)
+	-- Buffer sequence re-ordering
+	-- * because some people may have accidentally skipped some letters
 	local ReorderedBuffers = {}
-
-	for Index : string , Buffer : ShaderBuffer in Buffers do
-		table.insert(Index, Buffer)
+	for _ : number , Buffer : ShaderBuffer in Buffers do
+		table.insert(ReorderedBuffers, Buffer)
 	end
 
 	Buffers = ReorderedBuffers
 
-	argue( Shader.mainImage , ERROR[2] )
+	argue( Shader.mainImage , ERROR[1] )
 	table.insert(Buffers, Shader.mainImage)
-	
-	-- /* Fetch inputs */
-	local iMouse = STRegistry:GetSharedTable(ShaderID..'@Mouse')
 
-	-- /* Interlacer implementation */
+	-- # Interlacer implementation
 	local Step = 1
 	local StepX, StepY = 1, 1
 
-	local Offset = Canvas.Resolution * (CanvasCoords - Vector2.one)
-
-	-- /* Render functions */
+	-- # Render functions
 	-- @ with dual-axis interlacing
 	local function DUIRendering ( iTimeDelta : number )
 
@@ -185,13 +165,16 @@ local function RunProgram()
 		local iTime = iTime()
 		local iDate = iDate()
 
-		for __ , Buffer : ShaderBuffer in Buffers do
+		for __ , ShaderBuffer: ShaderBuffer in Buffers do
 			for y = StepY , Canvas.Resolution.Y, InterlaceFactor do
 				for x = StepX, Canvas.Resolution.X, InterlaceFactor do
+					local fragColor = Vector3.new(Canvas:GetRGB(x, y))
+					local fragCoords = Vector2.new(Canvas:GetVirtualPosition(x, y))
+
 					Canvas:SetRGBA(x, y,
-						Buffer(
-							Vector3.new(Canvas:GetRGB(x, y)),
-							Vector2.new(x + Offset.X, y + Offset.Y),
+						ShaderBuffer(
+							fragColor,
+							fragCoords,
 							iTime,
 							iTimeDelta,
 							iResolution,
@@ -216,13 +199,16 @@ local function RunProgram()
 		local iTime = iTime()
 		local iDate = iDate()
 
-		for __ , Buffer : ShaderBuffer in Buffers do
+		for __ , ShaderBuffer: ShaderBuffer in Buffers do
 			for y = Step , Canvas.Resolution.Y, InterlaceFactor do
 				for x = 1, Canvas.Resolution.X do
+					local fragColor = Vector3.new(Canvas:GetRGB(x, y))
+					local fragCoords = Vector2.new(Canvas:GetVirtualPosition(x, y))
+
 					Canvas:SetRGBA(x, y,
-						Buffer(
-							Vector3.new(Canvas:GetRGB(x, y)),
-							Vector2.new(x + Offset.X, y + Offset.Y),
+						ShaderBuffer(
+							fragColor,
+							fragCoords,
 							iTime,
 							iTimeDelta,
 							iResolution,
@@ -241,11 +227,11 @@ local function RunProgram()
 	end
 
 	-- /* Rendering */
-	local PerFrame = DualAxisInterlacing and DUIRendering or UUIRendering
+	local Renderer = DualAxisInterlacing and DUIRendering or UUIRendering
 
 	task.synchronize()
 
-	RenderConnection = Run.PreRender:ConnectParallel( PerFrame )
+	RenderConnection = Run.PreRender:ConnectParallel(Renderer)
 end
 
 ----------------------------------------------------------------------------------

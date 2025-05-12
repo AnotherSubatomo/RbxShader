@@ -46,10 +46,7 @@ function Vector4.new(
 	end
 
 	local function IsAVector4( p : {} )
-		if type(p) == 'table' and p.X and p.Y and p.Z and p.W then
-			return true
-		end
-		return false
+		return type(p) == 'table' and p.X and p.Y and p.Z and p.W
 	end
 
 	setmetatable(vec4, {

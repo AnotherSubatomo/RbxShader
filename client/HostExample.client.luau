@@ -19,7 +19,7 @@ local CONFIGURATIONS = {
 	IsBlurred = false
 }
 
-local CANVAS_SIZE = Vector2.new(180, 120)
+local CANVAS_SIZE = Vector2.new(180, 120) -- try (192, 108) too!
 local SHADER = script.Shaders.VoxelShader
 
 local SCREEN = Instance.new('ScreenGui')
@@ -27,7 +27,7 @@ SCREEN.Parent = Client.PlayerGui
 SCREEN.IgnoreGuiInset = true
 SCREEN.ResetOnSpawn = false
 
-RbxShader.new( script , SCREEN , CANVAS_SIZE , CONFIGURATIONS , SHADER , SHADER.Name )
+RbxShader.new( SHADER.Name, SHADER, CONFIGURATIONS, script, SCREEN, CANVAS_SIZE)
 RbxShader.run( SHADER.Name )
 
 task.wait(5)
