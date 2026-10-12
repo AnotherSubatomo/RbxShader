@@ -7,44 +7,48 @@
 	( Original comments are preserved. )
 ]=]
 
+--!strict
+--!optimize 2
 --!native
 
-local g = require(game.ReplicatedStorage.RbxShader.GraphicsMathLib)
-local vec3 = Vector3.new
+type vec3 = vector
+type vec2 = vector
 
--- // Pixel shader
+local resolution: vec2, resolution_y: number
+local iDate_w: number
+
+const function N(fragCoord: vec2, t: number): (vec3)
+	fragCoord /= 0.8
+	return vector.magnitude(fragCoord) < resolution_y
+		and math.cos(iDate_w / t-math.atan2(fragCoord.x, fragCoord.y)) > 0.998
+		and vector.one or vector.zero;
+end
+
+-- Shader program
 return {
 	CONFIGURATION = {
-		InterlaceFactor = 2 ,
-		ScreenDivision = 4
+		InterlaceFactor = 2;
+		ScreenDivision = Vector2.new(4, 2);
 	};
-	-- // Image buffer
-	mainImage = function (
-		fragColor : Vector3 ,
-		fragCoords : Vector2 ,
-		iTime : number ,
-		iTimeDelta : number ,
-		iResolution : Vector2 ,
-		iMouse : Vector2,
-		iDate : {number}
-	)
-		-- Define N function as per the GLSL macro
-		local function N( t : number ) : Vector3
-			fragCoords /= 0.8
-			return fragCoords.Magnitude < iResolution.Y
-				and g.cos(iDate[4]/t-g.atan2(fragCoords.X, fragCoords.Y)) > 0.998
-				and vec3(1, 1, 1) or vec3(0, 0, 0);
-		end
 
-		-- Initialization of R and adjustment of u (fragCoords)
-		fragCoords += fragCoords - iResolution;
+	init = function (iResolution: vec2): ()
+		resolution, resolution_y = iResolution, iResolution.y
+	end;
+
+	perFrame = function (_, iDate: {number}): ()
+		iDate_w = iDate[4]
+	end;
+	
+	mainImage = function (fragCoord: vec2): (vec3, number)
+		-- Initialization of R and adjustment of u (fragCoord)
+		fragCoord += fragCoord - resolution;
 
 		-- Accumulate the result into fragColor (interpreted as o)
-		fragColor = N(1e9 - 12.0) +
-					N(573.0) +
-					N(9.55) +
-					N(6875.0);
+		const fragColor = N(fragCoord, 1e9 - 12.0) +
+						N(fragCoord, 573.0) +
+						N(fragCoord, 9.55) +
+						N(fragCoord, 6875.0);
 		
-		return g.v3_rgb(fragColor);
-	end
+		return fragColor, 1;
+	end;
 }

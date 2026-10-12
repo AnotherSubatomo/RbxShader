@@ -1,6 +1,4 @@
 {
-  "name": "RbxShader",
-  "tree": {
-    "$path": "src"
-  }
+	"name": "RbxShader",
+	"tree": { "$path": "src" }
 }

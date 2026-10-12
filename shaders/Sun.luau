@@ -7,31 +7,37 @@
 	( Original comments are preserved. )
 ]=]
 
+--!strict
+--!optimize 2
 --!native
 
-local g = require(game.ReplicatedStorage.RbxShader.GraphicsMathLib)
+type vec3 = vector
+type vec2 = vector
 
--- // Pixel shader
+local mouse_res: vec2
+local resolution: vec2, resolution_y: number
+
+-- Shader program
 return {
 	CONFIGURATION = {
-		InterlaceFactor = 2 ,
-		ScreenDivision = 4
+		InterlaceFactor = 2;
+		ScreenDivision = Vector2.new(4, 2);
 	};
-	-- // Image buffer
-	mainImage = function (
-		fragColor : Vector3 ,
-		fragCoords : Vector2 ,
-		iTime : number ,
-		iTimeDelta : number ,
-		iResolution : Vector2 ,
-		iMouse : Vector2
-	)
-		iMouse = Vector2.new(iMouse.X, iMouse.Y);
-		local uv : Vector2 = (fragCoords - iResolution) / iResolution.Y;
-		local ms : Vector2 = (iMouse - iResolution) / iResolution.Y;
 
-		local sun : number = 0.05 / (ms - uv).Magnitude + 0.02;
+	init = function (iResolution: vec2): ()
+		resolution, resolution_y = iResolution, iResolution.y
+	end;
+	
+	perFrame = function (_, _, iMouse: vec2): ()
+		mouse_res = iMouse - resolution
+	end;
+
+	mainImage = function (fragCoord: vec2): (vec3, number)
+		const uv = (fragCoord - resolution) / resolution_y;
+		const ms = mouse_res / resolution_y;
+
+		const sun = 0.05 / vector.magnitude(ms - uv) + 0.02;
 		
-		return sun / 0.477, sun + 0.5, sun + 0.8
-	end
+		return vector.create(sun / 0.477, sun + 0.5, sun + 0.8), 1;
+	end;
 }

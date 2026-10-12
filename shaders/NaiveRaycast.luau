@@ -4,65 +4,110 @@
 	Pixelizes the game environment by naively raycasting.
 	
 	NOTE:
-	- there is something very wrong with how I calculate
-	  material reflectance
+	- there is something very wrong with how I calculate material reflectance
 ]=]
 
+--!strict
+--!optimize 2
 --!native
 
-local g = require(game.ReplicatedStorage.RbxShader.GraphicsMathLib)
-local Camera = workspace.CurrentCamera
+type vec3 = vector
+type vec2 = vector
 
--- // #defines
-local SKY_COLOR = Color3.fromRGB(117, 202, 255)
-local ZOOM = 6
-local CANVAS_SIZE = Vector2.new(180, 120) * ZOOM
+const function reflect(i: Vector3, n: Vector3): (Vector3)
+	return i - 2 * vector.dot(n :: any, i :: any) * n
+end
 
-local Offset = (Camera.ViewportSize - CANVAS_SIZE) / 2
+const SKY_COLOR = Color3.fromRGB(117, 202, 255)
+const SHADOW_COLOR = Color3.fromRGB(33, 33, 33)
+const GLASS = Enum.Material.Glass
+const METAL = Enum.Material.Metal
+const ZOOM = 6
 
--- // Make screen size dynamically change
+local CANVAS_SIZE: Vector2 = Vector2.zero
+local Offset: Vector2 = Vector2.zero
+
+local rawRBXmemberGet: (any, string) -> (any)
+xpcall(function() return game[""] end, function() rawRBXmemberGet = debug.info(2, "f") end)
+
+const Raycast: (
+	self: Workspace,
+	origin: Vector3,
+	direction: Vector3,
+	raycastParams: RaycastParams?
+) -> (RaycastResult) = rawRBXmemberGet(workspace, 'Raycast')
+
+const Terrain = rawRBXmemberGet(workspace, 'Terrain')
+
+const GetMaterialColor: (
+	self: Terrain,
+	material: Enum.Material
+) -> (Color3) = rawRBXmemberGet(Terrain, 'GetMaterialColor')
+
+const Color3Lerp: (
+	self: Color3,
+	color: Color3,
+	alpha: number
+) -> (Color3) = SKY_COLOR.Lerp
+
+const Camera = rawRBXmemberGet(workspace, 'CurrentCamera') :: Camera
+
+-- Make screen size dynamically change
 Camera:GetPropertyChangedSignal('ViewportSize'):Connect( function()
-	Offset = (Camera.ViewportSize - CANVAS_SIZE) / 2
+	Offset = (rawRBXmemberGet(Camera, 'ViewportSize') :: Vector2 - CANVAS_SIZE) / 2
 end)
 
--- // Fragment shader
+const ScreenPointToRay: (
+	self: Camera,
+	x: number,
+	y: number,
+	depth: number?
+) -> (Ray) = rawRBXmemberGet(Camera, 'ScreenPointToRay')
+
+const IsA: (
+	self: Instance,
+	class: string
+) -> (Ray) = rawRBXmemberGet(Camera, 'IsA')
+
+-- Shader program
 return {
 	CONFIGURATION = {
-		InterlaceFactor = 2 ,
-		ScreenDivision = 4 ,
-		OriginOffset = Vector2.zero ,
-		CountDirection = Vector2.one
+		OriginOffset = Vector2.zero;
+		CountDirection = Vector2.one;
+		InterlaceFactor = 2;
+		ScreenDivision = Vector2.new(4, 2);
 	};
-	-- // Image buffer
-	mainImage = function (
-		fragColor : Vector3 ,
-		fragCoords : Vector2 ,
-		iTime : number ,
-		iTimeDelta : number ,
-		iResolution : Vector2
-	)
-		local Raycast = Camera:ScreenPointToRay(
-			Offset.X + fragCoords.X * ZOOM ,
-			Offset.Y + fragCoords.Y * ZOOM
+	
+	init = function (iResolution: vec2): ()
+		CANVAS_SIZE = Vector2.new(iResolution.x * ZOOM, iResolution.y * ZOOM)
+		Offset = (rawRBXmemberGet(Camera, 'ViewportSize') :: Vector2 - CANVAS_SIZE) / 2
+	end;
+
+	mainImage = function (fragCoords: vec2, _, iTime: number): (vec3, number)
+		local fragColor: Color3
+
+		const Ray = ScreenPointToRay( Camera,
+			Offset.X + fragCoords.x * ZOOM,
+			Offset.Y + fragCoords.y * ZOOM
 		)
 		
-		local RaycastResult = workspace:Raycast( Raycast.Origin, Raycast.Direction * 500 )
-		
+		const RaycastResult = Raycast( workspace, Ray.Origin, Ray.Direction * 500 )
+
 		if RaycastResult then
-			if RaycastResult.Instance:IsA('Terrain') then
-				fragColor = workspace.Terrain:GetMaterialColor( RaycastResult.Material )
+			if IsA( RaycastResult.Instance, 'Terrain' ) then
+				fragColor = GetMaterialColor( Terrain, RaycastResult.Material )
 			else
 				fragColor = RaycastResult.Instance.Color
-				
-				if RaycastResult.Material == Enum.Material.Glass or RaycastResult.Material == Enum.Material.Metal then
+
+				if RaycastResult.Material == GLASS or RaycastResult.Material == METAL then
 					local refColor = nil
-					local Reflectance = RaycastResult.Instance.Reflectance
-					local Direction = g.reflect(RaycastResult.Position, RaycastResult.Normal)
-					local ReflectanceResult = workspace:Raycast(RaycastResult.Position, Direction * 500)
+					const Reflectance = RaycastResult.Instance.Reflectance
+					const Direction = reflect( RaycastResult.Position, RaycastResult.Normal )
+					const ReflectanceResult = Raycast( workspace, RaycastResult.Position, Direction * 500 )
 					
 					if ReflectanceResult then
-						if ReflectanceResult.Instance:IsA('Terrain') then
-							refColor = workspace.Terrain:GetMaterialColor( ReflectanceResult.Material )
+						if IsA( ReflectanceResult.Instance, 'Terrain' ) then
+							refColor = GetMaterialColor( Terrain, ReflectanceResult.Material )
 						else
 							refColor = ReflectanceResult.Instance.Color
 						end
@@ -70,19 +115,17 @@ return {
 						refColor = SKY_COLOR
 					end
 					
-					-- /* Match reflectance property. */
-					fragColor = Color3.new(g.c3(fragColor)):Lerp( refColor, Reflectance )
+					-- Match reflectance property
+					fragColor = Color3Lerp( fragColor, refColor, Reflectance )
 				end
 			end
 			
-			-- /* Shadowing */
-			fragColor = fragColor:Lerp( Color3.fromRGB(33, 33, 33), 1 - ((RaycastResult.Normal.Y + 1) / 2) )
-			
-			-- /* Motion blur */
+			-- Shadowing
+			fragColor = Color3Lerp( fragColor, SHADOW_COLOR, 1 - ((RaycastResult.Normal.Y + 1) / 2) )
 		else
 			fragColor = SKY_COLOR
 		end
 		
-		return g.c3_rgb(fragColor)
-	end,
+		return vector.create(fragColor.R, fragColor.G, fragColor.B), 1;
+	end;
 }

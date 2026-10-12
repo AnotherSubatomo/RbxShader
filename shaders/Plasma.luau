@@ -7,18 +7,19 @@
 	( Original comments are preserved. )
 ]=]
 
+--!strict
+--!optimize 2
 --!native
 
-local g = require(game.ReplicatedStorage.RbxShader.GraphicsMathLib)
-local vec3 = Vector3.new
-local vec2 = Vector2.new
-local uvec3 = Vector3.one
-local uvec2 = Vector2.one
-local abs = math.abs
+type vec3 = vector
+type vec2 = vector
 
-local function tanh_v3(v: Vector3): Vector3
-	return vec3(math.tanh(v.X), math.tanh(v.Y), math.tanh(v.Z))
-end
+const vec3 = vector.create
+const vec2 = vector.create
+
+const VEC2_4 = vec2(4, 4)
+const VEC2_0P7 = vec2(0.7, 0.7)
+const COLOR_R, COLOR_G, COLOR_B = -1, 1, 2
 
 --[[
 /*
@@ -30,47 +31,56 @@ end
 */
 ]]
 
--- // Pixel shader
+local r: vec2
+
+-- Shader program
 return {
 	CONFIGURATION = {
-		InterlaceFactor = 2 ,
-		ScreenDivision = 4
+		InterlaceFactor = 2;
+		ScreenDivision = Vector2.new(4, 2);
 	};
-	-- // Image buffer
-	mainImage = function (
-		fragColor : Vector3 ,
-		fragCoords : Vector2 ,
-		iTime : number ,
-		iTimeDelta : number ,
-		iResolution : Vector2 ,
-		iMouse : Vector2
-	)
-		local O = Vector3.zero
-		local I = fragCoords
-		-- //Resolution for scaling
-		local r = iResolution
-		-- //Centered, ratio corrected, coordinates
-		local p = (I+I-r) / r.Y
-		-- //Z depth
-		local z = vec2(0)
-		-- //Iterator (x=0)
-		local i = vec2(0)
-		-- //Fluid coordinates
-		z += uvec2*4
-		local f = p*(z-uvec2*4*abs(.7-p:Dot(p)));
+
+	init = function (iResolution: vec2): ()
+		-- Resolution for scaling
+		r = iResolution
+	end;
+	
+	mainImage = function (I: vec2, _, iTime: number): (vec3, number)
+		-- Clear frag color
+		local O_x, O_y, O_z, O_w = 0, 0, 0, 0
+		-- Centered, ratio corrected, coordinates
+		const p = (I+I-r) / r.y
+		-- Z depth
+		const z = VEC2_4
+		-- Fluid coordinates
+		local f = p*(z-VEC2_4*math.abs(.7-vector.dot(p, p)));
 		
-		-- //Clear frag color and loop 8 times
-		while i.Y < 8 do
-			i += Vector2.yAxis
-			local s = (g.sin_v2(f)+uvec2) --@temp; not in source code
-			-- //Set color waves and line brightness
-			O += vec3(s.X, s.Y, s.Y) * abs(f.X-f.Y)
-			-- //Add fluid waves
-			f += g.cos_v2(g.yx(f)*i.Y+i+(uvec2*iTime))/i.Y+uvec2*.7;
+		-- loop 8 times
+		for i_y = 1, 8 do
+			const f_x, f_y = f.x, f.y --@temp;
+			const s_x = math.sin(f_x)+1 --@temp; not in source code
+			const s_y = math.sin(f_y)+1 --@temp;
+			-- Set color waves and line brightness
+			const f_absd = math.abs(f_x-f_y) --@temp;
+			O_x += s_x * f_absd
+			O_y += s_y * f_absd
+			O_z += s_y * f_absd
+			O_w += s_x * f_absd
+			-- Add fluid waves
+			f += vec2(
+				math.cos(f_y * i_y + iTime),
+				math.cos(f_x * i_y + i_y + iTime)
+			) / i_y + VEC2_0P7
 		end
 		
-		-- //Tonemap, fade edges and color gradient
-		O = tanh_v3(7.*g.exp_v3(uvec3*(z.X-4.)-p.Y*vec3(-1,1,2))/O);
-		return g.v3_rgb(O);
-	end
+		-- Tonemap, fade edges and color gradient
+		const z_x_M4 = z.x-4.
+		const p_y = p.y
+		O_x = math.tanh(7. * math.exp(z_x_M4-p_y*COLOR_R) / O_x)
+		O_y = math.tanh(7. * math.exp(z_x_M4-p_y*COLOR_G) / O_y)
+		O_z = math.tanh(7. * math.exp(z_x_M4-p_y*COLOR_B) / O_z)
+		O_w = math.tanh(7. * math.exp(z_x_M4) / O_w)
+
+		return vec3(O_x, O_y, O_z), O_w;
+	end;
 }

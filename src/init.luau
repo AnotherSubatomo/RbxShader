@@ -1,343 +1,416 @@
 
 --[[
-	================== RbxShader ===================
-	
-	Last updated: 12/05/2025
-	Version: 1.8.5 (191)
-	
-	Learn more about the engine via: https://github.com/AnotherSubatomo/RbxShader
-	
-	Copyright (c) 2024, AnotherSubatomo
+	RbxShader
+	An ergonomic, robust, and performant fragment shader engine.
+
+	Learn more about the engine via:
+	https://github.com/AnotherSubatomo/RbxShader
+
+	Version: 3.0.0-rc.1
 	SPDX-License-Identifier: MIT
+	Author: @AnotherSubatomo (GitHub)
 ]]
 
+--!strict
+--!optimize 2
 --!native
---!nonstrict
 
--- // Types
-local Types = require(script.utils.Common)
+const Resampler = Enum.ResamplerMode
+const Vector2 = Vector2.new
+const New = Instance.new
+
+const Asset = game:GetService 'AssetService'
+const Players = game:GetService 'Players'
+const Client = Players.LocalPlayer
+
+const InputBackend = require(script:WaitForChild 'lib' .Input.backend)
+const Registry = require(script:WaitForChild 'sys' .Registry)
+
+const Types = require(script.common)
+type SharedMouse = Types.SharedMouse
+type Workers = {Actor}
+
 export type EngineConfiguration = Types.EngineConfiguration
-export type ShaderBuffer = Types.ShaderBuffer
 export type Shader = Types.Shader
-
--- // Dependencies
-local STRegistry = game:GetService('SharedTableRegistry')
-local Run = game:GetService('RunService')
-local Culler = require(script.Culler)
-local argue = require(script.utils.Argue)
-
-local Client = game.Players.LocalPlayer
-local Mouse = Client:GetMouse()
-
-local function GuiIsAWorldspaceGui(Screen: BillboardGui | SurfaceGui): boolean
-	return Screen:IsA('SurfaceGui') or Screen:IsA('BillboardGui')
-end
-
--- // Defaults
-local MOUSE_REF = '@Mouse'
-
-local ERROR = {
-	"Configs.ScreenDivision must be divisible by 4 for maximum performance." ,
-	"Canvas size too big, it's subdivisions are greater than 1024 x 1024 (EditableImage dimension limit)." ,
-	"CanvasSize was unspecified." ,
-	"Invalid shader given." ,
-	"Shaders can't be ran on the server-side. I mean, just why?" ,
-	"A ShaderID is necessary in manipulating specific shaders that run on the same script." ,
-	"ShaderID has already been used." ,
-	"Given ShaderID to fetch shader is not in use, are you sure it's typed correctly?" ,
-	"Canvas size too small, minimum size is 4 x 4." ,
-	"Given screen to display the shader in was invalid."
+export type ShaderContext = {
+	read ID: string,
+	read Configs: EngineConfiguration,
+	read Workers: Workers,
+	read Industry: Folder,
+	read Patches: {EditableImage},
+	read Resolution: Vector2
 }
 
-local DEFAULT_CONFIGURATIONS = {
-	InterlaceFactor = 2 ,
-	DualAxisInterlacing = true ,
-	ScreenDivision = 16 ,
-	IsBlurred = false ,
-	OriginOffset = Vector2.yAxis, --> by OpenGL convention
-	CountDirection = Vector2.new(1, -1) --> by OpenGL convention
-} :: EngineConfiguration
+const VERSION = vector.create(3, 0, 0)
 
-argue( Run:IsClient() , ERROR[5] )
+const EMPTY_TABLE = {}
+const WORKER_TEMPLATE = script.Worker
+const MIN_RESOLUTION = Vector2(32, 32)
+const MAX_RESOLUTION = Vector2(1025, 1025)
 
-local MoveConnections = {}
-local ShaderPrograms = {}
-local RbxShader = {}
+const DEFAULT_CONFIGURATIONS: EngineConfiguration = {
+	InterlaceFactor = 2,
+	ScreenDivision = Vector2(4, 4),
+	InitialColor = vector.one,
+	InitialAlpha = 1,
+	OriginOffset = Vector2(0, 1), --> by OpenGL convention
+	CountDirection = Vector2(1, -1) --> by OpenGL convention
+}
 
--- /* Create the environment for running the shader. */
-function RbxShader.new(
-	ShaderID : string ,
-	Shader : ModuleScript ,
-	Configuration : EngineConfiguration ,
-	Host : Script ,
-	Screen : GuiBase2d ,
-	CanvasSize : Vector2
-)
-	-- /* Set default values */
-	local BuiltConfiguration = require(Shader).CONFIGURATION
-	Configuration = if type(Configuration) ~= "table" then {} else Configuration
+const ERR_INVALID_SHADER = 'Invalid shader module given.'
+const ERR_FRAG_OP_MISS_FMT = 'There is a required but undefined fragment operator within the program, called: '
+const ERR_FRAG_OP_MAIN_MISS = ERR_FRAG_OP_MISS_FMT .. 'mainImage'
+const ERR_PATCH_SIZE_TOO_BIG = 'Resolution is too big; the size of its patches were greater than the EditableImage dimension limit (1024 x 1024).'
+
+-- Returns a stable engine configuration built from two possibly conflicting configurations.
+const function ReconcileConfiguration(GivenConfig: LooseEngineConfiguration?, BuiltConfig: LooseEngineConfiguration?): (EngineConfiguration)
+	local Config = table.clone(DEFAULT_CONFIGURATIONS)
+	local SaneGivenConfig = GivenConfig or EMPTY_TABLE :: EngineConfiguration
+	local SaneBuiltConfig = BuiltConfig or EMPTY_TABLE :: EngineConfiguration
 	
-	for Field : string , Default : any in DEFAULT_CONFIGURATIONS do
-		Configuration[Field] = Configuration[Field] or BuiltConfiguration[Field] or Default
+	for Field, Default in Config do
+		Config[Field] = SaneGivenConfig[Field] or SaneBuiltConfig[Field] or Default
 	end
-	
-	-- /* Screen can only be divided into multiples-of-4 parts */
-	argue( Configuration.ScreenDivision % 4 == 0 , ERROR[1] )
-	argue( CanvasSize , ERROR[3] )
-	argue( typeof(Shader) == 'Instance' and Shader:IsA('ModuleScript') , ERROR[4] )
-	argue( CanvasSize:Min(Vector2.one*4) == Vector2.one*4 , ERROR[9] )
-	
-	-- /* Calculate the dimensions of each subdivisions */
-	local Subdivisions = Vector2.new(Configuration.ScreenDivision / 4, 4)
-	local SubcanvasSize = (CanvasSize / Subdivisions):Floor()
-	local ExcessSize = CanvasSize - SubcanvasSize * Subdivisions
-	
-	argue( SubcanvasSize:Max((Vector2.one*1025)) == Vector2.one*1025 , ERROR[2] )
-	
-	-- /* Create the screen from where we'll drawn on */
-	argue( Screen and Screen:IsA('GuiBase2d') , ERROR[10] )
-	Screen.Name = 'SHADERSCREEN@'..Shader.Name
-	
-	local Background = Instance.new('Frame')
-	Background.Parent = Screen
-	Background.Size = UDim2.fromScale(1, 1)
-	Background.BackgroundColor3 = Color3.new()
-	Background.Name = 'Background'
-	
-	local Centerer = Instance.new('UIListLayout')
-	Centerer.Parent = Background
-	Centerer.HorizontalAlignment = 'Center'
-	Centerer.VerticalAlignment = 'Center'
 
-	local Easel = Instance.new('ImageButton')
-	Easel.Parent = Background
-	Easel.Size = UDim2.fromScale(1, 1)
-	Easel.BackgroundTransparency = 1
-	Easel.Name = 'Easel'
-	Easel.Image = ''
-	
-	local AspectRatio = Instance.new('UIAspectRatioConstraint')
-	AspectRatio.Parent = Easel
-	AspectRatio.AspectRatio = CanvasSize.X / CanvasSize.Y
+	local CountDirection_X = Config.CountDirection.X
+	local CountDirection_Y = Config.CountDirection.Y
 
-	-- /* Create shader host. */
-	argue( ShaderID, ERROR[6] )
-	argue( not ShaderPrograms[ShaderID] , ERROR[7] )
-
-	local Parent = Instance.new('Folder')
-	Parent.Parent = Host
-	Parent.Name = 'SHADER@'..ShaderID
-	ShaderPrograms[ShaderID] = Parent
-	
-	local Link = Instance.new('ObjectValue')
-	Link.Parent = Parent
-	Link.Value = Screen
-	Link.Name = 'ScreenLink'
-	
-	-- /* Assume inputs are needed */
-	local iMouse = SharedTable.new({ X = 1, Y = 1 })
-	
-	Easel.MouseButton1Down:Connect( function ()
-		-- # Only consider input when mouse is at the display of the shader.
-		MoveConnections[ShaderID] = Mouse.Move:Connect( function ()
-			local vs = workspace.CurrentCamera.ViewportSize		--@ viewport pixel size
-			local eas = Easel.AbsoluteSize						--@ easel absolute pixel size
-			local e = vs - eas									--@ excess viewport space
-			local mp = Vector2.new(
-				Mouse.X + Easel.AbsolutePosition.X,
-				Mouse.Y + 48 + e.Y / 2
-			)
-			local rmp = mp - e									--@ relative mouse position (to easel)
-			
-			local Position = (rmp / eas * CanvasSize):Ceil()	--@ mouse position relative to canvas size
-
-			SharedTable.update( iMouse, 'X', function()
-				return Position.X
-			end)
-			SharedTable.update( iMouse, 'Y', function()
-				return Position.Y
-			end)
-		end)
-	end)
-
-	local function DisconnectMoveConnection()
-		if MoveConnections[ShaderID] ~= nil then
-			MoveConnections[ShaderID]:Disconnect()
-		end
+	if CountDirection_X == 0 then
+		warn 'Config.CountDirection.X is 0, which results to undefined behavior; defaulting to -1.'
+		CountDirection_X = -1
 	end
-	
-	Easel.MouseButton1Up:Connect(DisconnectMoveConnection)
-	Easel.MouseLeave:Connect(DisconnectMoveConnection)
-	
-	STRegistry:SetSharedTable(ShaderID..MOUSE_REF, iMouse)
-	
-	-- /* Parallelize canvas calculations */
-	local Workers : {Actor} = {}
-	
-	-- # Create worker threads
-	for _ = 1, Configuration.ScreenDivision do
-		local Actor = Instance.new('Actor')
-		script.Worker:Clone().Parent = Actor
-		table.insert(Workers, Actor)
-	end
-	
-	script.Worker:Destroy()
-	
-	-- # Parent all actors under self
-	for _, Actor : Actor in Workers do
-		Actor.Parent = Parent
-	end
-	
-	task.defer( function ()
-		-- /* Set environment context */
-		for y = 1, Subdivisions.Y do
-			for x = 1, Subdivisions.X do
-				local Actor = Workers[y+4*(x-1)]
-				local CanvasCoords = Vector2.new(x, y)
-				Actor:SendMessage('SetContext', ShaderID, Shader, CanvasSize, CanvasCoords, Configuration)
-			end
-		end
 
-		-- /* Create the subcanvases */
-		for y = 1, Subdivisions.Y do
-			for x = 1, Subdivisions.X do
-				local Actor = Workers[y+4*(x-1)]
-				Actor.Worker.Name = 'Worker@'..y+4*(x-1)
-
-				local Size : Vector2 = SubcanvasSize
-				if y == Subdivisions.Y then Size += Vector2.new(0, ExcessSize.Y) end
-				if x == Subdivisions.X then Size += Vector2.new(ExcessSize.X, 0) end
-
-				local Scale : Vector2 = Size / CanvasSize
-				Actor:SendMessage('MakeCanvas', Easel, Scale, Size)
-			end
-		end
-	end)
-	
-	-- /* Put culler into action (if `Screen` is a SurfaceGui or BillboardGui) */
-	-- * Runs the program if the part that the Gui is adorned to is still visible
-	--	 on the user viewport or is within the max distance, pauses it if not.
-	
-	local WorldspaceGui = GuiIsAWorldspaceGui(Screen) and Screen
-		or Screen:FindFirstChildOfClass('SurfaceGui') or Screen:FindFirstChildOfClass('BillboardGui')
-	
-	if WorldspaceGui then
-		Culler.add(WorldspaceGui, ShaderID, function ()
-			for _, Actor : Actor in Workers do
-				Actor:SendMessage( 'Resume' , ShaderID )
-			end
-		end, function ()
-			for _, Actor : Actor in Workers do
-				Actor:SendMessage( 'Pause' , ShaderID )
-			end
-		end)
+	if CountDirection_Y == 0 then
+		warn 'Config.CountDirection.Y is 0, which results to undefined behavior; defaulting to -1.'
+		CountDirection_Y = -1
 	end
+
+	Config.CountDirection = Vector2(CountDirection_X, CountDirection_Y)
+	return Config :: EngineConfiguration
 end
 
---==============================
---[=[ SHADER PROGRAM ACTIONS ]=]
---==============================
+-- Requires the given shader module while ensuring that its content is formatted validly.
+const function SafelyUnpackShaderModule(File: ModuleScript): (Shader)
+	assert( typeof(File) == 'Instance' , ERR_INVALID_SHADER )
+	assert( File:IsA('ModuleScript') , ERR_INVALID_SHADER )
+	const Shader = require(File) :: any
+	assert( typeof(Shader) == 'table' , ERR_INVALID_SHADER )
+	assert( typeof(Shader.mainImage) == 'function' , ERR_FRAG_OP_MAIN_MISS )
+	return Shader :: Shader
+end
 
-local function GetWorkers ( Engine : LocalScript )
-	local Workers = {}
+-- Generates actors: instances which enable code to run on multiple threads simultaneously.
+const function GenerateWorkers(Amount: number): (Workers)
+	const Workers = table.create(Amount) :: Workers
 
-	for _, Child : Instance in Engine:GetChildren() do
-		if Child:IsA('Actor') then
-			table.insert(Workers, Child)
-		end
+	for Order = 1, Amount do
+		const Actor = New 'Actor'
+		const Worker = Instance.fromExisting(WORKER_TEMPLATE)
+		Worker.Name = 'Worker@' .. Order
+		Worker.Parent = Actor
+		Workers[Order] = Actor
 	end
 
 	return Workers
 end
 
-local function CallAction( Action : string , ShaderID : string )
-	argue( ShaderID, ERROR[6] )
-	argue( ShaderPrograms[ShaderID], ERROR[8] )
+-- Sends the same message throughout the given list of actors.
+const function MessageEachWorker(Workers: Workers, Topic: string, ...: any): ()
+	for _, Actor in Workers do Actor:SendMessage(Topic, ...) end
+end
 
-	local Workers = GetWorkers( ShaderPrograms[ShaderID] )
+-- Distributes the shader program's context to all workers.
+const function InitializeWorkers(
+	Workers: Workers, Patches: {EditableImage}, ShaderID: string, ShaderModule: ModuleScript,
+	Configs: EngineConfiguration, Resolution: Vector2, Division_Y: number
+): ()
+	for Index, Actor in Workers do
+		-- Fetch their respectively assigned patches
+		local Patch = Patches[Index]
+		local X = ((Index - 1) // Division_Y) + 1
+		local Y = ((Index - 1) % Division_Y) + 1
+		Actor:SendMessage('Init', ShaderID, ShaderModule, Resolution, Patch, X, Y)
+		Actor:SendMessage('Set', Configs)
+	end
+end
+
+-- Creates and initializes the runtime context and
+-- environment for the given shader to run on.
+const function NEW(
+	ShaderModule: ModuleScript,
+	Host: Script,
+	Resolution: Vector2,
+	GivenConfiguration: LooseEngineConfiguration?
+): (ShaderContext)
+	assert( typeof(Resolution) == 'Vector2' , 'Resolution was unspecified.' )
+	assert( Resolution:Min(MIN_RESOLUTION) == MIN_RESOLUTION , 'Resolution is too small; minimum resolution is 32 by 32.' )
+
+	-- Temporarily unpack the module here
+	local Shader = SafelyUnpackShaderModule(ShaderModule)
 	
-	task.defer( function ()
-		for _, Actor : Actor in Workers do
-			Actor:SendMessage( Action )
+	local Configs = ReconcileConfiguration(GivenConfiguration, Shader.CONFIGURATION)
+	local ShaderID = string.sub(tostring(Configs), 8)
+
+	-- Initialize the allocated input channels
+	local ChannelAllocations: {any} = type(Shader.CHANNELS) == 'table' and Shader.CHANNELS or EMPTY_TABLE
+	local Channels = SharedTable.new(table.create(#ChannelAllocations, 0))
+	
+	for Order, Allocation in ChannelAllocations do
+		if typeof(Allocation) == 'string' then
+			local FragOpName = Allocation
+			assert( typeof(Shader[FragOpName]) == 'function' , ERR_FRAG_OP_MISS_FMT .. FragOpName )
 		end
-	end)
-end
-
--- /* Halts a shader from running. */
-function RbxShader.stop( ShaderID : string )
-	CallAction( 'Stop', ShaderID )
-end
-
--- /* Runs a shader. (Not a resume function) */
-function RbxShader.run( ShaderID : string )
-	CallAction( 'Run' , ShaderID )
-end
-
--- /* Pauses the shader. */
-function RbxShader.pause( ShaderID : string )
-	CallAction( 'Pause', ShaderID )
-end
-
--- /* Resumes the shader. */
-function RbxShader.resume( ShaderID : string )
-	CallAction( 'Resume', ShaderID )
-end
-
--- /* Halts and terminates a shader program. */
-function RbxShader.clear( ShaderID : string )
-	argue( ShaderID, ERROR[6] )
-	argue( ShaderPrograms[ShaderID], ERROR[8] )
-
-	local Host = ShaderPrograms[ShaderID]
-	local Screen = Host.ScreenLink.Value
-	local Workers = GetWorkers( Host )
-
-	for _, Actor : Actor in Workers do
-		Actor:SendMessage( 'Stop' )
-	end
-	
-	if GuiIsAWorldspaceGui(Screen) then
-		Culler.remove(ShaderID)
-	end
-	
-	STRegistry:SetSharedTable(ShaderID..MOUSE_REF, nil)
-	Screen:Destroy()
-	Host:ClearAllChildren()
-	Host:Destroy()
-end
-
--- /* Sets the configuration of the shader to something else. */
-function RbxShader.set(
-	ShaderID : string ,
-	Configuration : EngineConfiguration
-)
-	argue( ShaderID, ERROR[6] )
-	argue( ShaderPrograms[ShaderID], ERROR[8] )
-	
-	local Workers = GetWorkers( ShaderPrograms[ShaderID] )
-	
-	for Field : string , Default : any in DEFAULT_CONFIGURATIONS do
-		Configuration[Field] = Configuration[Field] or Default
-	end
-	
-	RbxShader.pause( ShaderID )
-	
-	for _, Actor : Actor in Workers do
-		Actor:SendMessage( 'Set' , Configuration )
+		SharedTable.update(Channels, Order, function()
+			return InputBackend.AllocateChannel(Allocation, Resolution)
+		end)
 	end
 
-	RbxShader.resume( ShaderID )
+	-- Representation of the mouse position that is shared across parallel scripts.
+	local SharedMouse = SharedTable.new { x = 0, y = 0, z = 0 } :: SharedMouse
+	Registry.setMouse(ShaderID, SharedMouse)
+	Registry.setChannels(ShaderID, Channels :: any)
+	
+	-- Calculate the dimensions of each subdivisions
+	-- These subdivisions are called a 'subcanvas' or 'patch' of a canvas
+	local ScreenDivision = Configs.ScreenDivision:Floor()
+	local WorkerAmount = ScreenDivision.X * ScreenDivision.Y
+	assert ( WorkerAmount % 2 == 0 , 'The product of the components of `ScreenDivision` must be an even number for maximum performance.' )
+	
+	local MeanPatchSize = (Resolution / ScreenDivision):Floor()
+	local ExcessSize = Resolution - MeanPatchSize * ScreenDivision
+
+	assert( MeanPatchSize:Max(MAX_RESOLUTION) == MAX_RESOLUTION , ERR_PATCH_SIZE_TOO_BIG )
+	assert( (MeanPatchSize + ExcessSize):Max(MAX_RESOLUTION) == MAX_RESOLUTION , ERR_PATCH_SIZE_TOO_BIG )
+	
+	-- Set-up parallelized shader daemons that work on a designated patch
+	local Workers = GenerateWorkers(WorkerAmount)
+	local Industry = New 'Folder'
+	Industry.Name = 'SHADER@' .. ShaderID
+	Industry.Parent = Host
+	-- * Set parents at last priority, otherwise it won't work
+	for _, Actor in Workers do
+		Actor.Parent = Industry
+	end
+	
+	-- Create the patches
+	local Patches = table.create(WorkerAmount) :: {EditableImage}
+	local Division_X, Division_Y = ScreenDivision.X, ScreenDivision.Y
+	local MeanPatchSize_X, MeanPatchSize_Y = MeanPatchSize.X, MeanPatchSize.Y
+	local Excess_X, Excess_Y = ExcessSize.X, ExcessSize.Y
+
+	for Y = 1, Division_Y do
+		for X = 1, Division_X do
+			local Index = Y + Division_Y * (X - 1)
+			local Size_X, Size_Y = MeanPatchSize_X, MeanPatchSize_Y
+			if Y == Division_Y then Size_Y += Excess_Y end
+			if X == Division_X then Size_X += Excess_X end
+
+			local PatchSize = Vector2(Size_X, Size_Y)
+			local Patch = Asset:CreateEditableImage { Size = PatchSize }
+			Patches[Index] = Patch
+		end
+	end
+
+	task.defer(InitializeWorkers,
+		Workers, Patches, ShaderID, ShaderModule,
+		Configs, Resolution, Division_Y)
+	
+	Patches = table.freeze(Patches)
+
+	return table.freeze {
+		ID = ShaderID,
+		Configs = Configs,
+		Workers = Workers,
+		Industry = Industry,
+		Patches = Patches,
+		Resolution = Resolution
+	}
 end
 
-
-
---================================
---[=[ SHADER UTILITY LIBRARIES ]=]
---================================
-
--- /* Retrieve the graphics-specific math library. */
-function RbxShader:GetMathLib()
-	return require(script.GraphicsMathLib)
+const function deferTopic(Action: string, Workers: Workers, ...: any): ()
+	task.defer(MessageEachWorker, Workers, Action, ...)
 end
 
-return RbxShader
+-- Halts a shader from running.
+const function STOP(Context: ShaderContext): ()
+	deferTopic('Stop', Context.Workers)
+end
+
+-- Runs a shader. (Not a resume function)
+const function START(Context: ShaderContext): ()
+	deferTopic('Start', Context.Workers)
+end
+
+-- Pauses the shader.
+const function PAUSE(Context: ShaderContext): ()
+	deferTopic('Pause', Context.Workers)
+end
+
+-- Resumes the shader.
+const function RESUME(Context: ShaderContext): ()
+	deferTopic('Resume', Context.Workers)
+end
+
+-- Sets the configuration of the shader to something else.
+const function SET(Context: ShaderContext, GivenConfiguration: LooseEngineConfiguration): ()
+	local Workers = Context.Workers
+	local NewConfigs = ReconcileConfiguration(GivenConfiguration, Context.Configs)
+
+	deferTopic('Pause', Workers)
+	MessageEachWorker(Workers, 'Set', NewConfigs)
+	deferTopic('Resume', Workers)
+end
+
+const function CREATE_DISPLAY(Context: ShaderContext, IsBlurred: boolean?): (ImageButton)
+	local Configs = Context.Configs
+	local Resolution = Context.Resolution
+
+	local ScreenDivision = Configs.ScreenDivision
+	local Division_X, Division_Y = math.floor(ScreenDivision.X), math.floor(ScreenDivision.Y)
+	local WorkerAmount = Division_X * Division_Y
+
+	if WorkerAmount % 2 == 1 then
+		error 'The product of the components of screen division must be an even number for maximum performance.'
+	end
+	
+	-- Initialize the easel where our subcanvases will be placed
+	const Easel = New 'ImageButton' do
+		Easel.Name = Context.Industry.Name .. '/Easel'
+		Easel.Size = UDim2.fromScale(1, 1)
+		Easel.BackgroundTransparency = 1
+		Easel.ImageContent = Content.none
+
+		const Blur = not not IsBlurred
+
+		for Y = 0, Division_Y - 1 do
+			for X = 0, Division_X - 1 do
+				const Index = (Y + 1) + Division_Y * X
+				const Patch = Context.Patches[Index]
+
+				const SubeaselSize_X = Patch.Size.X / Resolution.X
+				const SubeaselSize_Y = Patch.Size.Y / Resolution.Y
+				const Subeasel = Instance.new('ImageLabel')
+				Subeasel.Name = '[' .. X .. ', ' .. Y .. ']'
+				Subeasel.Size = UDim2.fromScale(SubeaselSize_X, SubeaselSize_Y)
+				Subeasel.Position = UDim2.fromScale(SubeaselSize_X * X, SubeaselSize_Y * Y)
+				Subeasel.BackgroundTransparency = 1
+				Subeasel.BorderSizePixel = 0
+				Subeasel.ClipsDescendants = true
+				Subeasel.ImageContent = Content.fromObject(Patch)
+				Subeasel.Parent = Easel
+
+				Subeasel.ResampleMode = if Blur then Resampler.Default else Resampler.Pixelated
+			end
+		end
+	end
+
+	return Easel
+end
+
+const function TRACK_MOUSE_INPUTS(Context: ShaderContext, Easel: GuiButton): (() -> ())
+	const Configs = Context.Configs
+	const Resolution = Context.Resolution
+	const OriginOffset = Configs.OriginOffset
+	const CountDirection = Configs.CountDirection
+
+	const Mouse = Client:GetMouse()
+	const SharedMouse = Registry.getMouse(Context.ID) :: SharedMouse
+
+	if SharedMouse.Tracked then
+		error 'The mouse of the given shader context is already being tracked.'
+	end
+	
+	SharedMouse.Tracked = true
+
+	local MouseHasBeenClicked = false
+
+	const function MouseUpdater(): ()
+		const vs = workspace.CurrentCamera.ViewportSize --@ viewport pixel size
+		const eas = Easel.AbsoluteSize                  --@ easel absolute pixel size
+		const e = vs - eas                              --@ excess viewport space
+
+		const mpx = Mouse.X + Easel.AbsolutePosition.X
+		const mpy = Mouse.Y + 48 + e.Y / 2
+		const mp = Vector2(mpx, mpy)
+
+		const rmp = mp - e                              --@ relative mouse position (to easel)
+		const prc = (rmp / eas * Resolution):Ceil()     --@ mouse position relative to canvas size
+
+		-- * account for the pixel mapping
+		const vo = OriginOffset * Resolution            --@ virtual origin
+		const vp = vo + CountDirection * prc            --@ (the fragCoord the mouse is at)
+		
+		SharedMouse.x = vp.X
+		SharedMouse.y = vp.Y
+
+		if MouseHasBeenClicked then
+			SharedMouse.z = -1
+		end
+	end
+
+	local MoveConnection: RBXScriptConnection? = nil
+
+	const function ConnectMoveConnection(): ()
+		MouseUpdater()
+		MoveConnection = Mouse.Move:Connect(MouseUpdater)
+		SharedMouse.z = 1
+		
+		task.wait()
+		MouseHasBeenClicked = true
+	end
+	
+	const function DisconnectMoveConnection(): ()
+		if not MoveConnection then return end
+		MoveConnection:Disconnect()
+		MoveConnection = nil
+		SharedMouse.z = 0
+		MouseHasBeenClicked = false
+	end
+
+	-- Only consider input when mouse is at the display (i.e. easel).
+	const MouseButton1DownConnection = Easel.MouseButton1Down:Connect(ConnectMoveConnection)
+	const MouseButton1UpConnection = Easel.MouseButton1Up:Connect(DisconnectMoveConnection)
+	const MouseLeaveConnection = Easel.MouseLeave:Connect(DisconnectMoveConnection)
+	const DestroyingConnection = Easel.Destroying:Connect(DisconnectMoveConnection)
+
+	return function(): ()
+		MouseButton1DownConnection:Disconnect()
+		MouseButton1UpConnection:Disconnect()
+		MouseLeaveConnection:Disconnect()
+		DestroyingConnection:Disconnect()
+	end
+end
+
+-- Destroys the shader context and halts all dependent operations.
+const function DESTROY(Context: ShaderContext): ()
+	for _, Actor in Context.Workers do
+		Actor:SendMessage('Stop')
+	end
+
+	for _, Patch in Context.Patches do
+		Patch:Destroy()
+	end
+
+	const ShaderID = Context.ID
+	Registry.setMouse(ShaderID, nil)
+	Registry.setChannels(ShaderID, nil)
+
+	Context.Industry:Destroy()
+	table.clear(Context)
+end
+
+return {
+	VERSION = VERSION;
+
+	new     = NEW;
+	destroy = DESTROY;
+
+	stop    = STOP;
+	start   = START;
+	pause   = PAUSE;
+	resume  = RESUME;
+	set     = SET;
+
+	createDisplay = CREATE_DISPLAY;
+	trackMouseInputs = TRACK_MOUSE_INPUTS;
+}

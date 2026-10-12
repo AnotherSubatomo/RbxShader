@@ -7,91 +7,99 @@
 	( Original comments are preserved. )
 ]=]
 
+--!strict
+--!optimize 2
 --!native
 
-local g = require(game.ReplicatedStorage.RbxShader.GraphicsMathLib)
-local vec2 = Vector2.new
+type vec3 = vector
+type vec2 = vector
 
--- // #defines
-local LINEWIDTH = 3.2;
-local H = 35;
-local WAVEHEIGHT = 6.6;
-local WIDTH = 0.6;
-local CLOSENESS = 45;
-local OCTAVES = 3;
+const mix = math.lerp
+const HALF_PI = 3.14159/2.
 
--- // aux functions
+-- Defines
+const LINEWIDTH = 3.2
+const H = 35
+const WAVEHEIGHT = 6.6
+const WIDTH = 0.6
+const CLOSENESS = 45
+const OCTAVES = 3
 
-local function random(x : number) : number
-	return g.fract(g.sin(x)*43758.5453123);
+const function random(x: number): (number)
+	const r = math.sin(x)*43758.5453123
+	return r - r // 1
 end
 
-local function noise(x : number) : number
-	local i : number = g.floor(x);
-	local f : number = g.fract(x);
+const function noise(x: number): (number)
+	const i = x // 1
+	const f = x - x // 1
 	
-	local a : number = random(i);
-	local b : number = random(i+1);
+	const a = random(i)
+	const b = random(i+1)
 	
-	local u : number = f * f * (3 - 2 * f);
+	const u = f * f * (3 - 2 * f)
 
-	return g.mix(a, b, u);
+	return mix(a, b, u)
 end
 
-local function fbm(x : number) : number
-	local value : number	 = 0;
-	local amplitude : number = .5;
-	local frequency : number = 0;
+const function fbm(x): (number)
+	local value	 = 0.0
+	local amplitude = .5
 
 	for i = 1, OCTAVES, 1 do
-		value += amplitude * noise(x);
-		x *= 2;
-		amplitude *= .7;
+		value += amplitude * noise(x)
+		x *= 2.
+		amplitude *= .7
 	end
 
-	return value;
+	return value
 end
 
--- // Pixel shader
+const function smoothstep(edge0: number, edge1: number, x: number): (number)
+	const t = math.clamp((x - edge0) / (edge1 - edge0), 0, 1)
+	return t * t * (3 - 2 * t)
+end
+
+local res_x: number, res_y: number
+local linewidth: number
+
+-- Shader program
 return {
 	CONFIGURATION = {
-		InterlaceFactor = 2 ,
-		ScreenDivision = 4
+		InterlaceFactor = 2;
+		ScreenDivision = Vector2.new(4, 2);
 	};
-	-- // Image buffer
-	mainImage = function (
-		fragColor : Vector3 ,
-		fragCoords : Vector2 ,
-		iTime : number ,
-		iTimeDelta : number ,
-		iResolution : Vector2 ,
-		iMouse : Vector2,
-		iDate : {number}
-	)
-		local st : Vector2		 = (2*(iResolution - fragCoords) - iResolution) / iResolution.Y;
-		st = vec2(st.X, st.Y * CLOSENESS);
+	
+	init = function (iResolution: vec2): ()
+		res_x, res_y = iResolution.x, iResolution.y
+		linewidth = CLOSENESS * LINEWIDTH / res_y
+	end;
 
-		local linewidth : number = CLOSENESS * LINEWIDTH / iResolution.Y;
-		local val : number		 = 0;
+	mainImage = function (fragCoord: vec2, _, iTime: number): (vec3, number)
+		const st_x = (2 * fragCoord.x - res_x) / res_y
+		const st_y = (2 * fragCoord.y - res_y) / res_y * CLOSENESS
 
-		if g.abs(st.X) < WIDTH then
-			local env : number	= g.pow(g.cos(st.X/WIDTH*3.14159/2), 4.9);
-			local i : number	= g.floor(st.Y);
+		local val = 0
 
-			for n = g.max(-H, i-6), g.min(H, i), 1 do
-				local f : number	= st.Y - n;
-				local y : number	= f - 0.5;
+		if math.abs(st_x) < WIDTH then
+			const env = math.pow(math.cos(st_x/WIDTH*HALF_PI), 4.9)
+			const i	= st_y // 1
+
+			for n = math.max(-H, i-6), math.min(H, i), 1 do
+				const f	= st_y - n
+				local y	= f - 0.5
 				y -= WAVEHEIGHT
-					* g.pow(fbm(st.X*10.504 +n*432.1 + 0.5*iTime), 3)
+					* math.pow(fbm(st_x*10.504 +n*432.1 + 0.5*iTime), 3)
 					* env
-					+ (fbm(st.X*25.+n*1292.21)-0.32)*2 * 0.15;
-				local grid : number	= g.abs(y);
-				val += (1-g.smoothstep(0, linewidth, grid));
-				-- // val = grid;
-				if y < 0 then break end;
+					+ (fbm(st_x*25.+n*1292.21)-0.32)*2 * 0.15
+				
+				const grid = math.abs(y)
+				val += (1-smoothstep(0, linewidth, grid))
+				-- val = grid
+				if y < 0 then break end
 			end
 		end
 
-		return val, val, val, val;
-	end
+		return vector.create(val, val, val), val;
+	end;
 }

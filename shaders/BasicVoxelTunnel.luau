@@ -7,117 +7,189 @@
 	( Original comments are preserved. )
 ]=]
 
+--!strict
+--!optimize 2
 --!native
 
-local g = require(game.ReplicatedStorage.RbxShader.GraphicsMathLib)
+type vec3 = vector
+type vec2 = vector
 
--- // Variables
-local res = .6			-- @ voxel size
-local max_iter = 80		-- @ raycast depth
-local distFade = 6		-- @ distance fade
-local speed = 2			-- @ travel speed
+const vec3 = vector.create
+const length = vector.magnitude
+const normalize = vector.normalize
+const cross = vector.cross
+const sign_v = vector.sign
+const abs_v = vector.abs
+const dot = vector.dot
+const mix = vector.lerp
+const sin = math.sin
+const cos = math.cos
+const max = math.max
 
-local lightClamp = distFade / 2
+const PI = math.pi
+const F0 = 0
+const FP2 = 0.2
+const FP3 = 0.3
+const FP5 = 0.5
+const F1 = 1
+const F2 = 2
+const F3 = 3
+const VEC3_X = vec3(F1, F0, F0)
+const VEC3_Y = vec3(F0, F1, F0)
+const VEC3_1 = vec3(F1, F1, F0)
+const VEC3_XY = vec3(F1, F1, F1)
+const VEC3_YZ = vec3(F0, F1, F1)
+const VEC3_0P5 = vec3(FP5, FP5, FP5)
 
--- // The white part of the tunnel
-local function path1 ( z : number )
-	return Vector3.new(
-		g.sin(z * .2) * 3 ,
-		g.cos(z * .3) * 2 ,
+const res = .5      -- voxel size
+const max_iter = 80 -- raycast depth
+const distFade = 4  -- distance fade
+const speed = 2     -- travel speed
+
+-- The white part of the tunnel
+const function path1(z: number): (vec3)
+	return vec3(
+		sin(z * FP2) * F3,
+		cos(z * FP3) * F2,
 		z
 	)
 end
 
--- // The yellow part of the tunnel
-local function path2 ( z : number )
-	return Vector3.new(
-		g.sin(z * .2) * 1 ,
-		g.cos(z * .3) * 4 - 1 ,
+-- The yellow part of the tunnel
+const function path2(z: number): (vec3)
+	return vec3(
+		sin(z * FP2),
+		cos(z * FP3) * 4 - F1,
 		z
 	)
 end
 
--- // The blue part of the tunnel
-local function path3 ( z : number )
-	return Vector3.new(
-		g.sin(z * .3) * 3 ,
-		g.cos(z * .2) - 1 ,
+-- The blue part of the tunnel
+const function path3(z: number): (vec3)
+	return vec3(
+		sin(z * FP3) * F3,
+		cos(z * FP2) - F1,
 		z
 	)
 end
 
-local cor : Vector3
+local cor: vec3
 
-local function map ( p : Vector3 )
-	local d1 = (p - path1(p.Z)).Magnitude
-	local d2 = (p - path2(p.Z)).Magnitude
-	local d3 = (p - path3(p.Z)).Magnitude
+const function map(p: vec3): (number)
+	const p_z = p.z
+	const d1 = length(p - path1(p_z))
+	const d2 = length(p - path2(p_z))
+	const d3 = length(p - path3(p_z))
 	
-	local s = 1.5
-	local ret = s - g.min(d1, g.min(d2, d3))
+	const s = 1.5
+	const ret = s - math.min(d1, d2, d3)
 	
-	cor = Vector3.xAxis
+	cor = VEC3_X
 	if ret == s - d1 then
-		cor = Vector3.one
+		cor = VEC3_1
 	elseif ret == s - d2 then
-		cor = Vector3.new(1,1,0)
+		cor = VEC3_XY
 	elseif ret == s - d3 then
-		cor = Vector3.new(0,1,1)
+		cor = VEC3_YZ
 	end
 	
 	return ret
 end
 
--- // Fragment shader
+const function sqrt_v(v: vector): (vector)
+	return vec3(math.sqrt(v.x), math.sqrt(v.y), math.sqrt(v.z))
+end
+
+const function smoothstep(edge0: number, edge1: number, x: number): (number)
+	const t = math.clamp((x - edge0) / (edge1 - edge0), F0, F1)
+	return t * t * (F3 - F2 * t)
+end
+
+local resolution: vec2, resolution_y: number
+local t: number
+local account_mouse: boolean
+local cos_ra: number, sin_ra: number
+local cos_rb: number, sin_rb: number
+
+-- Shader program
 return {
 	CONFIGURATION = {
-		InterlaceFactor = 1 ,
-		ScreenDivision = 4
+		InterlaceFactor = 2;
+		ScreenDivision = Vector2.new(4, 2);
 	};
-	-- // Image buffer
-	mainImage = function (
-		fragColor : Vector3 ,
-		fragCoords : Vector2 ,
-		iTime : number ,
-		iTimeDelta : number ,
-		iResolution : Vector2
-	)
-		local uv = (fragCoords - 0.5 * iResolution) / iResolution.Y
+
+	init = function (iResolution: vec2): ()
+		resolution, resolution_y = iResolution, iResolution.y
+	end;
+
+	perFrame = function (iTime: number, _, iMouse: vec2): ()
+		t = speed * iTime
+		account_mouse = length(iMouse) > 40
+	
+		const mod_mouse = iMouse / resolution * PI
+		const ra = -PI * FP5 + mod_mouse.y
+		const rb = PI - mod_mouse.x * F2
+
+		cos_ra, sin_ra = cos(ra), sin(ra)
+		cos_rb, sin_rb = cos(rb), sin(rb)
+	end;
+
+	mainImage = function (fragCoord: vec2): (vec3, number)
+		const uv = (fragCoord - FP5 * resolution) / resolution_y
 		
-		-- // path
-		local t = speed * iTime
-		local ro = path1(t)
-		local rd = path1(t + 1)
+		-- path
+		const ro = path1(t)
+		local rd = path1(t + F1)
 		
-		-- // camera
-		local f = (rd - ro).Unit
-		local u = Vector3.yAxis
-		local s = u:Cross(f).Unit
-		u = f:Cross(s).Unit
+		-- camera
+		const f = normalize(rd - ro)
+		local u = VEC3_Y
+		const s = normalize(cross(u, f))
+		u = normalize(cross(f, s))
 		
-		rd = (uv.X * s + uv.Y * u + f).Unit
+		rd = normalize(uv.x * s + uv.y * u + f)
+
+		-- mouse
+		if account_mouse then
+			const rd_y = cos_ra * rd.y + sin_ra * rd.z
+			local rd_z = -sin_ra * rd.y + cos_ra * rd.z
+			const rd_x = -sin_rb * rd_z + cos_rb * rd.x
+			rd_z = cos_rb * rd_z + sin_rb * rd.x
+			rd = vec3(rd_x, rd_y, rd_z)
+			-- * alternate version of the code above
+			--const rd_yz = vec2(cos_ra, -sin_ra) * rd.y + vec2(sin_ra, cos_ra) * rd.z;
+			--const rd_zx = vec2(cos_rb, -sin_rb) * rd_yz.y + vec2(sin_rb, cos_rb) * rd.x;
+			--rd = vec3(rd_zx.y, rd_yz.x, rd_zx.x)
+		end
 		
-		-- /*
-		-- *    "Digital Differential Analysis" (DDA)
-		-- */
+		-- "Digital Differential Analysis" (DDA)
+		local mask: vec3, i: number
 		
-		local mask, i
+		local grid = ro // res * res
+		const dGrid = sign_v(rd) * res
 		
-		local grid = (ro / res):Floor() * res
-		local dGrid = rd:Sign() * res
-		
-		local dCubo = 1 / rd:Abs()
-		local cubo = ( rd:Sign() * (grid - ro)
-			+ (rd:Sign() * .5 + Vector3.one * .5) * res
+		const dCubo = F1 / abs_v(rd)
+		const rd_sign = sign_v(rd)
+		local cubo = ( rd_sign * (grid - ro)
+			+ (rd_sign * FP5 + VEC3_0P5) * res
 		) * dCubo
 		
-		for __ = 1, max_iter do
+		for __ = F1, max_iter do
 			i = __
-			if map(grid) < 0 then
-				break
-			end
+			if map(grid) < F0 then break end
 			
-			mask = g.step_v3(cubo, g.yzx(cubo)) * g.step_v3(cubo, g.zxy(cubo))
+			const cubo_x, cubo_y, cubo_z = cubo.x, cubo.y, cubo.z
+			const cubo_mask_a = vec3(
+				if cubo_y < cubo_x then F0 else F1,
+				if cubo_z < cubo_y then F0 else F1,
+				if cubo_x < cubo_z then F0 else F1)
+
+			const cubo_mask_b = vec3(
+				if cubo_z < cubo_x then F0 else F1,
+				if cubo_x < cubo_y then F0 else F1,
+				if cubo_y < cubo_z then F0 else F1)
+
+			mask = cubo_mask_a * cubo_mask_b
 			
 			grid += dGrid * mask
 			cubo += dCubo * mask * res
@@ -125,30 +197,33 @@ return {
 		
 		local col = cor
 		if i < max_iter then
-			local d = (cubo * dCubo * res):Dot(mask)
-			local p = ro + d * rd
-			local q = g.fract_v3(p/res) - Vector3.one * 0.5
+			const d = dot(cubo - dCubo * res, mask)
+			const p = ro + d * rd
+			const p_over_res = p / res
+			local q = p_over_res - p_over_res // F1 - VEC3_0P5
 			
-			-- // border
-			q = q:Abs()
-			local bd = 1 - g.smoothstep(.02, 0, .4 - .8 * g.yzx(q):Max(g.zxy(q)):Dot(mask))
+			-- border
+			q = abs_v(q)
+			const opt0 = dot(vec3( max(q.y, q.z), max(q.z, q.x), max(q.x, q.y)), mask)
+			const bd = F1 - smoothstep(.02, F0, .4 - .8 * opt0)
 			
-			col += cor:Lerp(cor/2, bd) --mix(cor, cor/2, bd)
-			--[[
-			-- // sweeping line
-			col *= g.cos(t/2) > uv.X and 2 or 1
+			col += mix(cor, cor / F2, bd)
 			
-			-- // dots
-			col += Vector3.one * (g.cos(t/2) > uv.X and -1 or 1 - q.Magnitude * 4)
-			]]
-			-- // distance fade
+			--[[ sweeping line
+			const opt1 = cos(t/F2) > uv.x
+			col *= if opt1 then F2 else F1
+			
+			-- dots
+			col += VEC3_1 * (if opt1 then -2 else F1 - length(q) * 4)]]
+			
+			-- distance fade
 			col *= distFade / (d * d) - .05
 			
-			-- // lights? shadows? oclusion?
+			-- lights? shadows? oclusion?
 		end
 		
-		-- // gamma correction
-		col = g.sqrt_v3(col/lightClamp)
-		return g.v3_rgb(col)
-	end,
+		-- gamma correction
+		col = sqrt_v(col)
+		return col, F1;
+	end;
 }

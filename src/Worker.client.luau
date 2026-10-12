@@ -1,267 +1,210 @@
 
---[=[
-	Worker
-	Multithreaded script responsible for rendering
-	a dictated portion of the canvas.
-]=]
+-- Worker
+-- Multithreaded script responsible for rendering a dictated portion of the canvas.
 
+--!strict
+--!optimize 2
 --!native
 
--- // Dependencies
-local Run = game:GetService('RunService')
-local Actor = script:GetActor()
+const Run = game:GetService 'RunService'
+const Actor = script:GetActor()
 
-local root = game.ReplicatedStorage:WaitForChild('RbxShader')
-local FastCanvas = require(root.Canvas)
-local argue = require(root.utils.Argue):at('runtime')
+if not Actor then error 'Worker actor missing' end
 
-local STRegistry = game:GetService('SharedTableRegistry')
+const root = game.ReplicatedStorage:WaitForChild 'RbxShader'
+const Registry = require(root.sys.Registry)
+const FastCanvas = require(root.sys.Canvas)
 
-local ERROR = {
-	'Shader never had a `mainImage` function.' ,
-	'Different shader buffers cannot not share the same letter.'
-}
+-- * hot functions, must be localized
+const FastCanvas_SetRGBA = FastCanvas.setRGBA
+const FastCanvas_Render = FastCanvas.render
 
--- * Every type changes will have to be manually synced, unfortunately
-local Types = require(root.utils.Common)
-type ShaderBuffer = Types.ShaderBuffer
+const EMPTY_TABLE = {}
+const EMPTY_FUNCTION = function() end
+
+const Types = require(root.common)
+type GenericFragmentOperator = Types.FragmentOperator<Types.vec2 | Types.vec3>
+type SharedMouse = Types.SharedMouse
+type Channels = Types.Channels
 type Shader = Types.Shader
 type EngineConfiguration = Types.EngineConfiguration
-type FastCanvas = FastCanvas.Canvas
+type Canvas = FastCanvas.Canvas
 
-----------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------
 
-local ShaderID : string = nil
-local Shader : Shader = nil
-local iResolution : Vector2 = nil
-local CanvasCoords : Vector2 = nil
-local Configuration : EngineConfiguration = nil
+local ShaderID: string
+local Shader: Shader
+local MainImage: GenericFragmentOperator
+local PerFrame: Types.PerFrame = EMPTY_FUNCTION
+local Init: Types.ShaderInitializer = EMPTY_FUNCTION
 
-Actor:BindToMessage( 'SetContext' , function (
-	__ShaderID : string ,
-	__Shader : ModuleScript ,
-	__iResolution : Vector2 ,
-	__CanvasCoords : Vector2 ,
-	__Configuration : EngineConfiguration
+local iResolution: Types.vec2
+local Configuration: EngineConfiguration
+local iMouse: SharedMouse
+local iChannels: Channels
+const ChannelFragOps: {GenericFragmentOperator} = {}
+local CanvasCoords: Vector2
+local Canvas: Canvas
+
+Actor:BindToMessage( 'Init' , function (
+	__ShaderID: string,
+	ShaderModule: ModuleScript,
+	Resolution: Vector2,
+	Patch: EditableImage,
+	X: number,
+	Y: number
 )
 	ShaderID = __ShaderID
-	Shader = require(__Shader)
-	iResolution = __iResolution
-	CanvasCoords = __CanvasCoords
-	Configuration = __Configuration
+	Shader = require(ShaderModule) :: Shader
+	Init = Shader.init or Init
+	PerFrame = Shader.perFrame or PerFrame
+	MainImage = Shader.mainImage
+	iResolution = vector.create(Resolution.X, Resolution.Y)
+	iChannels = Registry.getChannels(ShaderID)
+	iMouse = Registry.getMouse(ShaderID)
+
+	CanvasCoords = Vector2.new(X, Y)
+	Canvas = FastCanvas.new(Patch)
+
+	-- Collect the fragment operators assigned to each buffer declared (if there is any)
+	local ChannelAllocations: {any} = type(Shader.CHANNELS) == 'table' and Shader.CHANNELS or EMPTY_TABLE
+
+	for Order, Allocation in ChannelAllocations do
+		if typeof(Allocation) ~= 'string' then continue end
+		ChannelFragOps[Order] = Shader[Allocation]
+	end
 end)
 
-----------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------
 
-local Canvas : FastCanvas = nil
-
-Actor:BindToMessage( 'MakeCanvas' , function (
-	Easel : Frame ,
-	EaselSize : Vector2 ,
-	CanvasSize : Vector2
-)
-	local Subeasel = Instance.new('Frame')
-	Subeasel.Parent = Easel
-	Subeasel.Size = UDim2.fromScale( EaselSize.X , EaselSize.Y )
-	Subeasel.Position = UDim2.fromScale( EaselSize.X * (CanvasCoords.X-1) , EaselSize.Y * (CanvasCoords.Y-1) )
-	Subeasel.BackgroundTransparency = 1
-
-	Canvas = FastCanvas.new(Subeasel, CanvasSize, Configuration.IsBlurred)
-	-- Initialize the image buffer to the given initial color and alpha
-	Canvas:Fill(Configuration.InitialColor, Configuration.InitialAlpha)
+Actor:BindToMessage( 'Set' , function (Configs: EngineConfiguration)
+	Configuration = Configs
+	
 	-- Initialize the VPM buffer to the given origin, offset, and counting direction
-	local VirtualOrigin = Configuration.OriginOffset * iResolution
-	local RelativeOffset = Canvas.Resolution * (CanvasCoords - Vector2.one)
-	local CountDirection = Configuration.CountDirection
-	Canvas:RecalculateVirtualPixelMapping(VirtualOrigin, RelativeOffset, CountDirection)
+	const VirtualOrigin = Configuration.OriginOffset * Vector2.new(iResolution.x, iResolution.y)
+	const RelativeOffset = Canvas.Resolution * (CanvasCoords - Vector2.one)
+	const CountDirection = Configuration.CountDirection
+	
+	FastCanvas.recalculateVirtualTexelMapping(Canvas, VirtualOrigin, RelativeOffset, CountDirection)
 end)
 
-----------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------
 
-Actor:BindToMessage( 'Set' , function (
-	NewConfiguration : EngineConfiguration
-)
-	-- # Do necessary updates
-	-- @ Update resample mode
-	if NewConfiguration.IsBlurred ~= Configuration.IsBlurred then
-		local Resampler = Enum.ResamplerMode
-		Canvas.__Easel.ResampleMode = NewConfiguration.IsBlurred and Resampler.Default or Resampler.Pixelated
-	end
-	-- @ Update pixel coordinate mapping
-	if NewConfiguration.OriginOffset ~= Configuration.OriginOffset or
-	NewConfiguration.CountDirection ~= Configuration.CountDirection then
-		local VirtualOrigin = NewConfiguration.OriginOffset * iResolution
-		local RelativeOffset = Canvas.Resolution * (CanvasCoords - Vector2.one)
-		local CountDirection = NewConfiguration.CountDirection
-		Canvas:RecalculateVirtualPixelMapping(VirtualOrigin, RelativeOffset, CountDirection)
-	end
-	Configuration = NewConfiguration
-end)
+local RenderConnection: RBXScriptConnection?
 
-----------------------------------------------------------------------------------
-
-local RenderConnection : RBXScriptConnection = nil
-
--- # using os.clock() is smoother than os.time(), pretty sick
 local oTime = os.clock()
 local pTime = 0
 
--- /* Program runtime getter */
-local function iTime()
+const iDate = table.create(4, 0)
+
+const function getTime(): (number)
 	return os.clock() - oTime
 end
 
--- /* Date getter */
-local function iDate()
-	local gt = os.date("%Y|%m|%d|%X"):split('|')
-	local t = gt[4]:split(':')
-	gt[4] = t[1] * 3600 + t[2] * 60 + t[3] + select(2, math.modf(os.clock()))
-
-	for k, v in gt do
-		gt[k] = tonumber(v)
-	end
-
-	return gt
+const function updateDate(): ()
+	const d = os.date("*t")
+	const d_daysec = d.hour * 3600 + d.min * 60 + d.sec
+	iDate[1] = d.year
+	iDate[2] = d.month
+	iDate[3] = d.day
+	iDate[4] = d_daysec
 end
 
--- /* Program runner */
-local function RunProgram()
-	-- # Fundamental variables
-	local Buffers = {} --> collection of shader buffers
-	local iMouse = STRegistry:GetSharedTable(ShaderID..'@Mouse') --> mouse position
-	local InterlaceFactor = Configuration.InterlaceFactor
-	local DualAxisInterlacing = Configuration.DualAxisInterlacing
+local CanvasResolution_X: number
+local CanvasResolution_Y: number
+local InterlaceFactor: number
+local StepX: number, StepY: number
+local Frame: number
 
-	-- # Buffer implementation
-	for Step : string , Buffer : ShaderBuffer in Shader do
-		if type(Step) ~= "string" or Step:sub(1, 6) ~= 'buffer' then continue end
-		local Order = Step:sub(7, 7):upper():byte() - 64
-		argue( Buffers[Order] , ERROR[2] )
-		Buffers[Order] = Buffer
-	end
+const function Renderer(iTimeDelta: number): ()
+	StepY += 1
+	if StepY > InterlaceFactor then StepY = 1; StepX += 1 end
+	if StepX > InterlaceFactor then StepX = 1 end
 
-	-- Buffer sequence re-ordering
-	-- * because some people may have accidentally skipped some letters
-	local ReorderedBuffers = {}
-	for _ : number , Buffer : ShaderBuffer in Buffers do
-		table.insert(ReorderedBuffers, Buffer)
-	end
+	Frame += 1
+	if Frame % 60 == 0 then updateDate(); Frame = 0 end
 
-	Buffers = ReorderedBuffers
+	const iTime = getTime()
+	const iMouse = vector.create(iMouse.x, iMouse.y, iMouse.z)
 
-	argue( Shader.mainImage , ERROR[1] )
-	table.insert(Buffers, Shader.mainImage)
+	PerFrame(iTime, iDate, iMouse, iChannels)
 
-	-- # Interlacer implementation
-	local Step = 1
-	local StepX, StepY = 1, 1
+	local TexelIndex = (StepY - 1) * CanvasResolution_X + StepX
+	const VTMArray = Canvas.VirtualTexelMapArray
 
-	-- # Render functions
-	-- @ with dual-axis interlacing
-	local function DUIRendering ( iTimeDelta : number )
+	for y = StepY, CanvasResolution_Y, InterlaceFactor do
+		local TexelRowIndex = TexelIndex
 
-		if StepX > InterlaceFactor then StepX = 1; StepY += 1 end
-		if StepY > InterlaceFactor then StepY = 1 end
-		local iTime = iTime()
-		local iDate = iDate()
+		for x = StepX, CanvasResolution_X, InterlaceFactor do
+			const fragCoords = VTMArray[TexelRowIndex]
+			const RGB, A = MainImage(fragCoords, iResolution,
+				iTime, iDate, iMouse, iChannels, iTimeDelta)
+			
+			FastCanvas_SetRGBA(Canvas, TexelRowIndex, RGB, A)
 
-		for __ , ShaderBuffer: ShaderBuffer in Buffers do
-			for y = StepY , Canvas.Resolution.Y, InterlaceFactor do
-				for x = StepX, Canvas.Resolution.X, InterlaceFactor do
-					local fragColor = Vector3.new(Canvas:GetRGB(x, y))
-					local fragCoords = Vector2.new(Canvas:GetVirtualPosition(x, y))
-
-					Canvas:SetRGBA(x, y,
-						ShaderBuffer(
-							fragColor,
-							fragCoords,
-							iTime,
-							iTimeDelta,
-							iResolution,
-							iMouse,
-							iDate
-						)
-					)
-				end
-			end
+			TexelRowIndex += InterlaceFactor
 		end
 
-		task.synchronize()
-		
-		Canvas:Render()
-		StepX += 1
+		TexelIndex += CanvasResolution_X * InterlaceFactor
 	end
 
-	-- @ without dual-axis interlacing
-	local function UUIRendering ( iTimeDelta : number )
+	task.synchronize()
+	FastCanvas_Render(Canvas)
+end
 
-		if Step > InterlaceFactor then Step = 1 end
-		local iTime = iTime()
-		local iDate = iDate()
-
-		for __ , ShaderBuffer: ShaderBuffer in Buffers do
-			for y = Step , Canvas.Resolution.Y, InterlaceFactor do
-				for x = 1, Canvas.Resolution.X do
-					local fragColor = Vector3.new(Canvas:GetRGB(x, y))
-					local fragCoords = Vector2.new(Canvas:GetVirtualPosition(x, y))
-
-					Canvas:SetRGBA(x, y,
-						ShaderBuffer(
-							fragColor,
-							fragCoords,
-							iTime,
-							iTimeDelta,
-							iResolution,
-							iMouse,
-							iDate
-						)
-					)
-				end
-			end
-		end
-
-		task.synchronize()
-
-		Canvas:Render()
-		Step += 1
+const function DisconnectRenderer(): ()
+	if RenderConnection then
+		RenderConnection:Disconnect()
 	end
+end
 
-	-- /* Rendering */
-	local Renderer = DualAxisInterlacing and DUIRendering or UUIRendering
+const function ConnectRenderer(): ()
+	CanvasResolution_X = Canvas.Resolution.X
+	CanvasResolution_Y = Canvas.Resolution.Y
+	InterlaceFactor = Configuration.InterlaceFactor
+	StepX, StepY = 1, 0
+	Frame = 0
 
+	Init(iResolution)
+
+	task.wait()
 	task.synchronize()
 
 	RenderConnection = Run.PreRender:ConnectParallel(Renderer)
 end
 
-----------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------
 
-Actor:BindToMessageParallel( 'Run' , function ()
-	-- /* Reset runtime. */
+Actor:BindToMessageParallel( 'Start' , function()
+	if RenderConnection ~= nil then return end
+	updateDate()
 	oTime = os.clock()
-	RunProgram()
+	ConnectRenderer()
 end)
 
-----------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------
 
 Actor:BindToMessage( 'Pause' , function()
-	pTime = iTime()
-	if RenderConnection ~= nil then
-		RenderConnection:Disconnect()
-	end
+	if RenderConnection == nil then return end
+	-- * this prevents time skips if 'pause' is called more than once
+	if pTime ~= 0 then return end
+	pTime = getTime()
+	DisconnectRenderer()
 end)
 
-----------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------
 
 Actor:BindToMessageParallel( 'Resume' , function()
-	oTime += iTime() - pTime
-	RunProgram()
+	if RenderConnection ~= nil then return end
+	updateDate()
+	oTime += getTime() - pTime
+	pTime = 0
+	ConnectRenderer()
 end)
 
-----------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------
 
-Actor:BindToMessage( 'Stop' , function ()
-	if RenderConnection ~= nil then
-		RenderConnection:Disconnect()
-	end
+Actor:BindToMessage( 'Stop' , function()
+	if RenderConnection == nil then return end
+	DisconnectRenderer()
 end)

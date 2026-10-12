@@ -1,11 +1,10 @@
-<div align="center">
 
 # RbxShader
 A robust, simple, and performant fragment shader engine, for everyone.
 
-[![Last Commit](https://img.shields.io/github/last-commit/AnotherSubatomo/RbxShader/main)](https://github.com/AnotherSubatomo/RbxShader/commits/main/) [![Release version](https://img.shields.io/github/v/release/AnotherSubatomo/RbxShader?color=green)](https://github.com/AnotherSubatomo/RbxShader/releases/latest) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Last Commit](https://img.shields.io/github/last-commit/AnotherSubatomo/RbxShader/main)](https://github.com/AnotherSubatomo/RbxShader/commits/main/) [![Release version](https://img.shields.io/github/v/release/AnotherSubatomo/RbxShader?color=green)](https://github.com/AnotherSubatomo/RbxShader/releases/latest) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) ![Experimental](https://img.shields.io/badge/Experimental-yellow.svg) ![Stable](https://img.shields.io/badge/Stable-blue.svg)
 
-</div>
+---
 
 The shader engine can run virtually any shader program that operates on a per-pixel basis, just like those on [Shadertoy](https://www.shadertoy.com/). Porting these programs are relatively easy due to their code structuring being similar. If you wish to test the abilities of this engine or understand how to write shader programs with this engine, you can use [any of the give example shader programs provided](https://github.com/AnotherSubatomo/RbxShader/blob/main/Shaders/), which are also ports of pre-existing shader programs in Shadertoy 😊.
 
@@ -18,33 +17,17 @@ If you have an eye for possible optimizations, or how the shader could be better
 
 3. Partial re-implementation of *common* GLSL functions - a library containing some of the common graphics-related math operations is provided along the engine. [_Swizzling_](https://en.wikipedia.org/wiki/Swizzling_(computer_graphics)) is not planned to be a feature of this library that is widely supported anytime in the future. As while it improves readability, the overhead from the additional function frame hurts overall performance.
 
-4. Multiple shader buffer support (multipass) - a multipass system is provided by the engine; where the shader can go through function `bufferA`, `bufferB`, etc. before finally going through `mainImage`.
+4. Channel sampling - channels are first specified via a `CHANNELS` field at the shader program, which is a table that contains the specs and content type of each channel. The channels can be a `Sampler2D` (which are static textures), `Sampler3D` (which are static volumes), or a `Buffer`.
 
-5. User input handling (mouse movement) - the mouses position within the shader's viewport is tracked every left-click on the viewport, and stops tracking when the button is let go or the mouse goes outside the viewport.
+5. User input handling - the system gives you context about mouse movement and keyboard input; where the mouse position can be accessed at the fragment operator itself, and keyboard inputs can be accessed as a `Sampler2D` channel, which you if you specify it at the `CHANNELS` field *(read the [docs](/docs/DOCUMENTATION.md) for more info)*. The mouse's position within the shader's viewport is tracked every left-click on the viewport, and stops tracking when the button is let go or the mouse goes outside the viewport.
+
+6. Multiple shader buffer support (multipass) - a multipass system is provided by the engine; where the shader can go through function `bufferA`, `bufferB`, etc. before finally going through `mainImage`.
 
 #### Features that are planned to be implemented:
-- Texture channel sampling
-- Frame interpolation (possible performance gains are yet to be evauated)
-<br><br>
+- Audio sampling (new channel type needed)
+
 ---
 
 Read more about the engine through the [DevForum post](https://devforum.roblox.com/t/rbxshader-a-robust-shader-engine-for-everyone/2965460).
 
 Learn more about the engine via the a [DevForum tutorial post](https://devforum.roblox.com/t/rbxshader-tutorial/2965555) or [documentations](docs/DOCUMENTATION.md).
-
----
-
-## Getting Started
-To build the place from scratch, use:
-
-```bash
-rojo build -o "RbxShader.rbxlx"
-```
-
-Next, open `RbxShader.rbxlx` in Roblox Studio and start the Rojo server:
-
-```bash
-rojo serve
-```
-
-For more help, check out [the Rojo documentation](https://rojo.space/docs).

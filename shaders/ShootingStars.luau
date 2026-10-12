@@ -1,20 +1,41 @@
 
 --[=[
-	Plasma
+	ShootingStars
 	Shader by @Xor on https://www.shadertoy.com/view/ctXGRn
 	Ported to Luau — ran by my engine — `RbxShader`.
 	
 	( Original comments are preserved. )
+	 * Modified to be more performant natively
 ]=]
 
+--!strict
+--!optimize 2
 --!native
 
-local g = require(game.ReplicatedStorage.RbxShader.GraphicsMathLib)
-local vec3 = Vector3.new
-local vec2 = Vector2.new
-local uvec3 = Vector3.one
-local uvec2 = Vector2.one
-local cos = math.cos
+type vec3 = vector
+type vec2 = vector
+
+const vec3 = vector.create
+const vec2 = vector.create
+const cos = math.cos
+
+const VEC3_1 = vector.one
+const VEC2_1 = vector.one
+const VEC2_BOX = vec2(.0, .22)
+const VEC2_P5 = vec2(.5, .5)
+const COLOR = vec3(0, 1, 2)
+
+const ITER = 10
+const R_R1Cache, R_R2Cache = {}, {}
+
+for i = 0.9, ITER, 1 do
+	R_R1Cache[i] = vec2(cos(i), cos(i+33))
+	R_R2Cache[i] = vec2(cos(i+11), cos(i))
+end
+
+const function cos_v(v: vec3): (vec3)
+	return vec3(math.cos(v.x), math.cos(v.y), math.cos(v.z))
+end
 
 --[[
 /*
@@ -29,48 +50,38 @@ local cos = math.cos
 */
 ]]
 
--- // Pixel shader
+-- Shader program
 return {
 	CONFIGURATION = {
-		InterlaceFactor = 2 ,
-		ScreenDivision = 4
+		InterlaceFactor = 2;
+		ScreenDivision = Vector2.new(4, 2);
 	};
-	-- // Image buffer
-	mainImage = function (
-		fragColor : Vector3 ,
-		fragCoords : Vector2 ,
-		iTime : number ,
-		iTimeDelta : number ,
-		iResolution : Vector2 ,
-		iMouse : Vector2
-	)
-		local I = fragCoords
-		-- //Clear fragcolor
-		local O = Vector3.zero
-		-- //Line dimensions (box) and position relative to line
-		local b, p = vec2(0,.2), Vector2.zero;
-		-- //Rotation matrix
-		local R_b, R_c, R_ad = 0, 0, 0;
-		-- //Iterate 20 times
-		for i = 0.9, 20, 1 do
-			-- //Rotate for each iteration
-			R_b = cos(i+33); R_c = cos(i+11); R_ad = cos(i);
-			-- //Using rotated boxes
-			local v1 = (I/iResolution.Y*i*.1+uvec2*iTime*b) -- @temp;
-			local v2 = g.fract_v2(vec2(
-				(R_c*v1.X)+(R_ad*v1.Y),
-				(R_ad*v1.X)+(R_b*v1.Y)
-			)) - uvec2*.5 -- @temp;
-			p = vec2(
-				(R_c*v2.X)+(R_ad*v2.Y),
-				(R_ad*v2.X)+(R_b*v2.Y)
-			)
-			-- //Add attenuation
-			local glow = 1e-3/(b:Min((-b):Max(p))-p).Magnitude
-			-- //My favorite color palette
-			O += glow * (g.cos_v3((uvec3*p.Y/.1)+vec3(0,1,2))+uvec3)
+	
+	mainImage = function (I: vec2, iResolution: vec2, iTime: number): (vec3, number)
+		--Clear fragcolor
+		local O = vector.zero
+		--Line dimensions (box) and position relative to line
+		local b, p = VEC2_BOX, vector.zero
+		--Rotation matrix
+		local R_R1, R_R2
+		--Iterate 20 times
+		const v01 = I / iResolution.y * .2 -- @optimization @temp
+		const v02 = VEC2_1 * iTime * b -- @optimization @temp
+		for i = 0.9, ITER do
+			--Rotate for each iteration
+			R_R1 = R_R1Cache[i]
+			R_R2 = R_R2Cache[i]
+			--Using rotated boxes
+			const v1 = (v01 * i + v02) -- @temp;
+			const v2 = (R_R2 * v1.x) + (R_R1 * v1.y) -- @temp;
+			const v3 = (v2 - v2 // 1) - VEC2_P5 -- @temp;
+			p = (R_R2 * v3.x) + (R_R1 * v3.y)
+			--Add attenuation
+			const glow = 1e-3 / vector.magnitude(vector.min(b, vector.max(-b, p)) - p)
+			--My favorite color palette
+			O += glow * (cos_v((VEC3_1 * p.y / .1) + COLOR) + VEC3_1)
 		end
 			
-		return g.v3_rgba(O);
-	end
+		return O, 1;
+	end;
 }
